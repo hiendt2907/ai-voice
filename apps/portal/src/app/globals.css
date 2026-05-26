@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-surface: oklch(98% 0 0);
+  --color-surface-raised: oklch(100% 0 0);
+  --color-surface-overlay: oklch(96% 0.005 250);
+  --color-text: oklch(18% 0 0);
+  --color-text-muted: oklch(48% 0 0);
+  --color-accent: oklch(55% 0.2 250);
+  --color-accent-hover: oklch(47% 0.22 250);
+  --color-border: oklch(88% 0.005 250);
+  --color-danger: oklch(52% 0.22 27);
+  --color-success: oklch(55% 0.18 145);
+  --color-warning: oklch(72% 0.19 85);
+
+  --duration-fast: 120ms;
+  --duration-normal: 250ms;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--color-surface);
+  color: var(--color-text);
+}
+
+@layer utilities {
+  .text-muted {
+    color: var(--color-text-muted);
+  }
+  .border-default {
+    border-color: var(--color-border);
+  }
+}
+
+@layer components {
+  .input {
+    @apply w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-white text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] outline-none transition-colors duration-[var(--duration-fast)];
+    @apply focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[oklch(55%_0.2_250_/_12%)];
+  }
+}

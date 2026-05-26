@@ -1,0 +1,40 @@
+{
+  "name": "@ai-voice/shared",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./constants/*": {
+      "require": "./dist/constants/*.js",
+      "import": "./dist/constants/*.js",
+      "types": "./dist/constants/*.d.ts"
+    },
+    "./schemas/*": {
+      "require": "./dist/schemas/*.js",
+      "import": "./dist/schemas/*.js",
+      "types": "./dist/schemas/*.d.ts"
+    },
+    "./types/*": {
+      "require": "./dist/types/*.js",
+      "import": "./dist/types/*.js",
+      "types": "./dist/types/*.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

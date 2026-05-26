@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-voice-config
+  namespace: ai-voice
+data:
+  DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/aivoice"
+  REDIS_URL: "redis://redis:6379"
+  MINIO_ENDPOINT: "minio:9000"
+  MINIO_BUCKET: "recordings"
+  API_PORT: "3001"
+  VOICE_PORT: "8000"
+  NESTJS_WEBHOOK_URL: "http://api:3001/api/v1/internal/call-events"
+  API_INTERNAL_URL: "http://api:3001"

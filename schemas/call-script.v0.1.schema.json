@@ -1,0 +1,128 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ai-voice.doctorcheck.vn/schemas/call-script.v0.1.schema.json",
+  "title": "CallScript",
+  "description": "DoctorCheck AI Call Script Contract v0.1",
+  "type": "object",
+  "required": ["id", "version", "campaign_id", "direction", "voice_profile", "entry_step", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semver version"
+    },
+    "campaign_id": { "type": "string", "format": "uuid" },
+    "direction": { "type": "string", "enum": ["inbound", "outbound"] },
+    "voice_profile": { "type": "string", "minLength": 1 },
+    "entry_step": { "type": "string" },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/Step" }
+    },
+    "intents": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/IntentCatalog" }
+    }
+  },
+  "$defs": {
+    "Beat": {
+      "type": "object",
+      "required": ["text"],
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string", "minLength": 1 },
+        "pause_after": {
+          "type": "string",
+          "enum": ["none", "micro", "short", "breath", "medium", "long", "turn"],
+          "default": "none"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["agent", "system", "silent"],
+          "default": "agent"
+        }
+      }
+    },
+    "Variant": {
+      "type": "object",
+      "required": ["id", "beats"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "beats": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/Beat" }
+        }
+      }
+    },
+    "Transition": {
+      "type": "object",
+      "required": ["when", "goto"],
+      "additionalProperties": false,
+      "properties": {
+        "when": { "type": "string", "minLength": 1 },
+        "goto": { "type": "string", "minLength": 1 }
+      }
+    },
+    "Step": {
+      "type": "object",
+      "required": ["id", "type", "variants"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "snake_case step identifier"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["speak", "speak_listen", "hold", "handoff", "hangup"]
+        },
+        "variants": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/Variant" }
+        },
+        "reprompt_variants": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "$ref": "#/$defs/Variant" }
+        },
+        "transitions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Transition" }
+        },
+        "fallback_goto": { "type": "string" },
+        "max_no_match": { "type": "integer", "minimum": 1, "default": 3 }
+      }
+    },
+    "IntentCatalog": {
+      "type": "object",
+      "required": ["intent", "examples"],
+      "additionalProperties": false,
+      "properties": {
+        "intent": { "type": "string", "minLength": 1 },
+        "examples": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["text"],
+            "properties": {
+              "text": { "type": "string" },
+              "slots": { "type": "object", "additionalProperties": { "type": "string" } }
+            }
+          }
+        },
+        "slots": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}
