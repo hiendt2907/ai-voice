@@ -5,12 +5,17 @@ import {
   BadRequestException,
 } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
-import { Repository } from 'typeorm'
+import { Repository, Not } from 'typeorm'
 import { Campaign } from './campaign.entity'
 import { ScriptVersion } from './script-version.entity'
+import { VoiceProfile } from './voice-profile.entity'
+import { KnowledgeArticle } from '../knowledge/knowledge-article.entity'
+import { NluDocument } from '../nlu/nlu-document.entity'
 import { ScriptLintService } from './lint/script-lint.service'
 import { CreateCampaignDto } from './dto/create-campaign.dto'
 import { CreateVersionDto } from './dto/create-version.dto'
+import { PatchCampaignDto } from './dto/patch-campaign.dto'
+import { UpsertVoiceProfileDto } from './dto/upsert-voice-profile.dto'
 
 @Injectable()
 export class ScriptsService {
@@ -19,6 +24,12 @@ export class ScriptsService {
     private readonly campaignRepo: Repository<Campaign>,
     @InjectRepository(ScriptVersion)
     private readonly versionRepo: Repository<ScriptVersion>,
+    @InjectRepository(VoiceProfile)
+    private readonly voiceProfileRepo: Repository<VoiceProfile>,
+    @InjectRepository(KnowledgeArticle)
+    private readonly kbRepo: Repository<KnowledgeArticle>,
+    @InjectRepository(NluDocument)
+    private readonly nluRepo: Repository<NluDocument>,
     private readonly lintService: ScriptLintService,
   ) {}
 
@@ -38,6 +49,12 @@ export class ScriptsService {
         voiceProfile: dto.voiceProfile,
       }),
     )
+  }
+
+  async patchCampaign(id: string, dto: PatchCampaignDto): Promise<Campaign> {
+    const campaign = await this.campaignRepo.findOne({ where: { id } })
+    if (!campaign) throw new NotFoundException(`Campaign ${id} not found`)
+    return this.campaignRepo.save({ ...campaign, ...dto })
   }
 
   async getCampaign(id: string) {
@@ -100,17 +117,31 @@ export class ScriptsService {
       .createQueryBuilder()
       .update()
       .set({ status: 'archived' })
-      .where('"campaignId" = :campaignId AND status = :status', {
-        campaignId,
-        status: 'published',
-      })
+      .where('"campaignId" = :campaignId AND status = :status', { campaignId, status: 'published' })
       .execute()
-    await this.campaignRepo.update(campaignId, { isActive: true })
-    return this.versionRepo.save({
+    const published = await this.versionRepo.save({
       ...sv,
       status: 'published' as const,
       publishedAt: new Date(),
     })
+    await this.campaignRepo.update(campaignId, { isActive: true, publishedVersionId: published.id })
+    return published
+  }
+
+  async deleteCampaign(id: string): Promise<void> {
+    const campaign = await this.campaignRepo.findOne({ where: { id } })
+    if (!campaign) throw new NotFoundException(`Campaign ${id} not found`)
+    await this.versionRepo.delete({ campaignId: id })
+    await this.campaignRepo.delete(id)
+  }
+
+  async getRelated(scriptId: string) {
+    await this.getCampaign(scriptId)
+    const [kbArticles, nluDocs] = await Promise.all([
+      this.kbRepo.find({ where: { scriptId }, order: { createdAt: 'DESC' } }),
+      this.nluRepo.find({ where: { scriptId }, order: { createdAt: 'DESC' } }),
+    ])
+    return { kbArticles, nluDocs }
   }
 
   private async findVersion(campaignId: string, version: string): Promise<ScriptVersion> {
@@ -118,5 +149,33 @@ export class ScriptsService {
     const sv = await this.versionRepo.findOne({ where: { campaignId, version } })
     if (!sv) throw new NotFoundException(`Version ${version} not found for campaign ${campaignId}`)
     return sv
+  }
+
+  // ── Voice Profiles ────────────────────────────────────────────────────────
+
+  listVoiceProfiles() {
+    return this.voiceProfileRepo.find({ where: { isActive: true }, order: { createdAt: 'DESC' } })
+  }
+
+  async getVoiceProfile(id: string): Promise<VoiceProfile> {
+    const profile = await this.voiceProfileRepo.findOne({ where: { id } })
+    if (!profile) throw new NotFoundException(`Voice profile ${id} not found`)
+    return profile
+  }
+
+  createVoiceProfile(dto: UpsertVoiceProfileDto): Promise<VoiceProfile> {
+    return this.voiceProfileRepo.save(
+      this.voiceProfileRepo.create({ id: crypto.randomUUID(), ...dto, ttsVoiceId: dto.ttsVoiceId ?? dto.elevenlabsVoiceId ?? '' }),
+    )
+  }
+
+  async updateVoiceProfile(id: string, dto: UpsertVoiceProfileDto): Promise<VoiceProfile> {
+    const existing = await this.getVoiceProfile(id)
+    return this.voiceProfileRepo.save({ ...existing, ...dto })
+  }
+
+  async deactivateVoiceProfile(id: string): Promise<void> {
+    await this.getVoiceProfile(id)
+    await this.voiceProfileRepo.update(id, { isActive: false })
   }
 }

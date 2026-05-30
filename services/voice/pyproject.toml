@@ -13,7 +13,15 @@ dependencies = [
     "faster-whisper>=1.1.0",
     "numpy>=2.2.0",
     "soundfile>=0.12.1",
+    "scipy>=1.13.0",
+    "elevenlabs>=2.50.0",
     "python-multipart>=0.0.12",
+    # Anthropic SDK for Claude NLU (optional — fallback to Ollama if not installed)
+    "anthropic>=0.40.0",
+    # TTS: gwen-tts (Qwen3-TTS finetuned on Vietnamese)
+    "qwen-tts>=0.1.0",
+    # RAG: lightweight ONNX-based embeddings (multilingual-e5-large)
+    "fastembed>=0.3.0",
 ]
 
 [project.optional-dependencies]
@@ -29,7 +37,18 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "--cov=tts --cov=runtime --cov=stt --cov=cloudfone --cov-report=term-missing --cov-fail-under=80"
+addopts = "--cov=tts --cov=runtime --cov=stt --cov=audio --cov=llm --cov=notify --cov=cloudfone --cov=rag --cov=metrics --cov-report=term-missing --cov-fail-under=80"
+
+[tool.coverage.run]
+omit = [
+    "*/stt/faster_whisper_stt.py",   # requires real WhisperModel (heavy dep)
+    "*/stt/elevenlabs_stt.py",        # requires live ElevenLabs API key
+    "*/tts/synthesis.py",             # requires real gwen-tts model
+    "*/tts/elevenlabs_tts.py",        # requires live ElevenLabs API key
+    "*/llm/client.py",                # ClaudeNLUClient requires Anthropic API key
+    "*/cloudfone/ods_client.py",      # ODS schema pending (blocked)
+    "*/rag/embedder.py",              # requires fastembed model download
+]
 
 [tool.ruff]
 line-length = 100

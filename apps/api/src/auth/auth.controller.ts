@@ -15,6 +15,11 @@ export class AuthController {
     return this.authService.login(req.user)
   }
 
+  @Post('refresh')
+  refresh(@Body() body: { refreshToken: string }) {
+    return this.authService.refresh(body.refreshToken)
+  }
+
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Get('me')

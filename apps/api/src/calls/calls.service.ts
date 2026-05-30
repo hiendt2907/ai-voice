@@ -1,8 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
+import * as http from 'node:http'
+import * as https from 'node:https'
 import { CallSession } from './call-session.entity'
 import { QaScore } from './qa-score.entity'
+import { CallTurn } from './call-turn.entity'
+import { CallRecording } from './call-recording.entity'
+import { CallMetrics } from './call-metrics.entity'
 import { CreateQaScoreDto } from './dto/create-qa-score.dto'
 
 function maskPhone(phone: string): string {
@@ -24,6 +29,11 @@ export interface CallEndedPayload {
   durationSeconds?: number
   startedAt?: string
   endedAt?: string
+  meta?: {
+    bargeInCount?: number
+    noMatchCounts?: Record<string, number>
+    lastRagScore?: number | null
+  }
 }
 
 @Injectable()
@@ -33,6 +43,12 @@ export class CallsService {
     private readonly sessionRepo: Repository<CallSession>,
     @InjectRepository(QaScore)
     private readonly qaRepo: Repository<QaScore>,
+    @InjectRepository(CallTurn)
+    private readonly turnRepo: Repository<CallTurn>,
+    @InjectRepository(CallRecording)
+    private readonly recordingRepo: Repository<CallRecording>,
+    @InjectRepository(CallMetrics)
+    private readonly metricsRepo: Repository<CallMetrics>,
   ) {}
 
   async handleCallEnded(payload: CallEndedPayload): Promise<CallSession> {
@@ -55,10 +71,55 @@ export class CallsService {
       endedAt: payload.endedAt ? new Date(payload.endedAt) : new Date(),
     }
 
-    if (existing) {
-      return this.sessionRepo.save({ ...existing, ...data })
+    const session = existing
+      ? await this.sessionRepo.save({ ...existing, ...data })
+      : await this.sessionRepo.save(this.sessionRepo.create(data))
+
+    // Phase 4.2: Dual-write call_turns from transcript
+    if (payload.transcript?.length) {
+      const turns = payload.transcript.map((entry, idx) => {
+        const role = entry['role'] === 'user' ? 'caller' : 'agent'
+        return {
+          callSessionId: session.id,
+          seq: idx,
+          role: role as 'agent' | 'caller',
+          stepId: (entry['step_id'] as string) ?? null,
+          intent: (entry['intent'] as string) ?? null,
+          text: (entry['text'] as string) ?? '',
+          metadata: null,
+        }
+      })
+      // Upsert turns (may be called multiple times for same session)
+      await this.turnRepo
+        .createQueryBuilder()
+        .insert()
+        .into(CallTurn)
+        .values(turns)
+        .orIgnore()
+        .execute()
     }
-    return this.sessionRepo.save(this.sessionRepo.create(data))
+
+    // Phase 4.2: Write call_metrics (bargeIn, noMatch, ragScore)
+    if (payload.meta) {
+      const noMatchCounts = payload.meta.noMatchCounts ?? {}
+      const totalNoMatch = Object.values(noMatchCounts).reduce((a, b) => a + b, 0)
+      const existing = await this.metricsRepo.findOne({
+        where: { callSessionId: session.id },
+      })
+      const metricsData = {
+        callSessionId: session.id,
+        bargeInCount: payload.meta.bargeInCount ?? 0,
+        noMatchCount: totalNoMatch,
+        stepCount: payload.transcript?.length ?? null,
+      }
+      if (existing) {
+        await this.metricsRepo.save({ ...existing, ...metricsData })
+      } else {
+        await this.metricsRepo.save(this.metricsRepo.create(metricsData))
+      }
+    }
+
+    return session
   }
 
   async listSessions(
@@ -104,6 +165,55 @@ export class CallsService {
   async getQaScores(sessionId: string): Promise<QaScore[]> {
     await this.getSession(sessionId)
     return this.qaRepo.find({ where: { callSessionId: sessionId }, order: { createdAt: 'DESC' } })
+  }
+
+  async getTurns(sessionId: string): Promise<CallTurn[]> {
+    await this.getSession(sessionId)
+    return this.turnRepo.find({
+      where: { callSessionId: sessionId },
+      order: { seq: 'ASC' },
+    })
+  }
+
+  async getRecording(sessionId: string): Promise<CallRecording | null> {
+    await this.getSession(sessionId)
+    return this.recordingRepo.findOne({ where: { callSessionId: sessionId } })
+  }
+
+  async streamRecording(sessionId: string): Promise<{ body: NodeJS.ReadableStream; contentType: string; contentLength?: string } | null> {
+    const recording = await this.getRecording(sessionId)
+    if (!recording) return null
+
+    const minioUrl = process.env.MINIO_INTERNAL_URL
+    if (!minioUrl) return null
+
+    const fileUrl = `${minioUrl}/${recording.storageKey}`
+    const mod = fileUrl.startsWith('https') ? https : http
+    return new Promise((resolve, reject) => {
+      mod.get(fileUrl, (res) => {
+        const contentType = res.headers['content-type'] ?? 'audio/wav'
+        const contentLength = res.headers['content-length']
+        resolve({ body: res, contentType, contentLength })
+      }).on('error', reject)
+    })
+  }
+
+  async getActiveCalls(): Promise<{ sessionId: string; callerNumberMasked: string | null; campaignId: string | null; finalStepId: string | null; durationSeconds: number; startedAt: string | null }[]> {
+    const sessions = await this.sessionRepo.find({
+      where: { status: 'active' as const },
+      order: { createdAt: 'DESC' },
+      take: 50,
+    })
+    return sessions.map((s) => ({
+      sessionId: s.sessionId,
+      callerNumberMasked: s.callerNumberMasked ?? null,
+      campaignId: s.campaignId ?? null,
+      finalStepId: s.finalStepId ?? null,
+      durationSeconds: s.startedAt
+        ? Math.round((Date.now() - new Date(s.startedAt).getTime()) / 1000)
+        : 0,
+      startedAt: s.startedAt ? s.startedAt.toISOString() : null,
+    }))
   }
 
   async listPendingQa(limit = 20): Promise<CallSession[]> {

@@ -14,19 +14,20 @@ export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
   @Get()
-  findAll(
+  async findAll(
     @Query('actorId') actorId?: string,
     @Query('entity') entity?: string,
     @Query('action') action?: string,
     @Query('limit') limit = '50',
     @Query('offset') offset = '0',
   ) {
-    return this.auditService.findAll({
+    const [data, total] = await this.auditService.findAll({
       actorId,
       entity,
       action,
       limit: parseInt(limit, 10),
       offset: parseInt(offset, 10),
     })
+    return { data, total }
   }
 }

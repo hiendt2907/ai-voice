@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
 import { Roles } from '../auth/decorators/roles.decorator'
 import { LearningService } from './learning.service'
+import { AuditService } from '../audit/audit.service'
 import { CreateProposalDto } from './dto/create-proposal.dto'
 
 class ReviewProposalDto {
@@ -17,7 +18,7 @@ class ReviewProposalDto {
 }
 
 interface AuthRequest {
-  user: { userId: string }
+  user: { userId: string; email: string }
 }
 
 @ApiTags('learning')
@@ -25,7 +26,10 @@ interface AuthRequest {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('learning')
 export class LearningController {
-  constructor(private readonly svc: LearningService) {}
+  constructor(
+    private readonly svc: LearningService,
+    private readonly audit: AuditService,
+  ) {}
 
   @Post('proposals')
   @Roles('admin', 'qa')
@@ -44,11 +48,22 @@ export class LearningController {
   @Post('proposals/:id/review')
   @Roles('admin', 'qa')
   @ApiOperation({ summary: 'Approve or reject a learning proposal (HITL)' })
-  reviewProposal(
+  async reviewProposal(
     @Param('id') id: string,
     @Body() dto: ReviewProposalDto,
     @Request() req: AuthRequest,
   ) {
-    return this.svc.reviewProposal(id, dto.decision, req.user.userId, dto.reviewNote)
+    const proposal = await this.svc.reviewProposal(id, dto.decision, req.user.userId, dto.reviewNote)
+    void this.audit.log({ actorId: req.user.userId, actorEmail: req.user.email, action: `review_${dto.decision}`, entity: 'learning_proposal', entityId: id, diff: { after: { decision: dto.decision, note: dto.reviewNote } } })
+    return proposal
+  }
+
+  @Post('proposals/:id/apply')
+  @Roles('admin')
+  @ApiOperation({ summary: 'Apply an approved proposal — creates a new draft version' })
+  async applyProposal(@Param('id') id: string, @Request() req: AuthRequest) {
+    const version = await this.svc.applyProposal(id, req.user.userId)
+    void this.audit.log({ actorId: req.user.userId, actorEmail: req.user.email, action: 'apply_proposal', entity: 'learning_proposal', entityId: id, diff: { after: { resultVersionId: version.scriptVersion.id } } })
+    return version
   }
 }

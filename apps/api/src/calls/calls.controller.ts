@@ -5,11 +5,15 @@ import {
   Param,
   Body,
   Query,
+  Res,
   UseGuards,
   Request,
   ParseIntPipe,
   DefaultValuePipe,
+  NotFoundException,
 } from '@nestjs/common'
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type FastifyReply = any
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
@@ -41,6 +45,13 @@ export class CallsController {
     return this.svc.listSessions({ page, limit, campaignId })
   }
 
+  @Get('active')
+  @Roles('admin', 'operator')
+  @ApiOperation({ summary: 'List currently active call sessions' })
+  getActiveCalls() {
+    return this.svc.getActiveCalls()
+  }
+
   @Get('qa-queue')
   @Roles('admin', 'qa')
   @ApiOperation({ summary: 'List calls pending QA review' })
@@ -69,5 +80,28 @@ export class CallsController {
   @ApiOperation({ summary: 'Get QA scores for a call' })
   getQaScores(@Param('id') id: string) {
     return this.svc.getQaScores(id)
+  }
+
+  @Get(':id/turns')
+  @ApiOperation({ summary: 'Get transcript turns for a call (ordered by seq)' })
+  getTurns(@Param('id') id: string) {
+    return this.svc.getTurns(id)
+  }
+
+  @Get(':id/recording')
+  @ApiOperation({ summary: 'Get recording metadata for a call' })
+  getRecording(@Param('id') id: string) {
+    return this.svc.getRecording(id)
+  }
+
+  @Get(':id/recording/stream')
+  @ApiOperation({ summary: 'Stream recording audio for a call' })
+  async streamRecording(@Param('id') id: string, @Res() reply: FastifyReply) {
+    const stream = await this.svc.streamRecording(id)
+    if (!stream) throw new NotFoundException('Recording not found or streaming not configured')
+    void reply
+      .header('Content-Type', stream.contentType)
+      .header('Accept-Ranges', 'bytes')
+      .send(stream.body)
   }
 }

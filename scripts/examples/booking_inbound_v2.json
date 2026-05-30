@@ -1,0 +1,984 @@
+{
+  "id": "00000000-0000-0000-0000-000000000002",
+  "version": "2.0.0",
+  "campaign_id": "00000000-0000-0000-0000-000000000010",
+  "direction": "inbound",
+  "voice_profile": "linh_clone_v1",
+  "entry_step": "greeting",
+  "slot_autofill": true,
+  "notes": "v2: Multi-RAG, slot-autofill, availability-driven, inquiry-first support",
+  "steps": [
+    {
+      "id": "greeting",
+      "type": "speak_listen",
+      "slot_autofill": true,
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "Xin chào,", "pause_after": "breath"},
+            {"text": "đây là tổng đài DoctorCheck.", "pause_after": "medium"},
+            {"text": "Tôi là Linh,", "pause_after": "short"},
+            {"text": "rất vui được hỗ trợ bạn hôm nay.", "pause_after": "medium"},
+            {"text": "Bạn cần đặt lịch khám, hỏi thông tin dịch vụ, hay có việc gì khác ạ?", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "reprompt_variants": [
+        {
+          "id": "r1",
+          "beats": [
+            {"text": "Tôi có thể hỗ trợ đặt lịch khám,", "pause_after": "short"},
+            {"text": "tư vấn về các dịch vụ,", "pause_after": "short"},
+            {"text": "tra cứu kết quả, hoặc hủy lịch ạ.", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r2",
+          "beats": [
+            {"text": "Bạn có muốn đặt lịch khám không ạ?", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r3",
+          "beats": [
+            {"text": "Tôi xin chuyển bạn tới nhân viên hỗ trợ trực tiếp ạ.", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "transitions": [
+        {"when": "intent == 'service_inquiry' || intent == 'ask_price' || intent == 'ask_prep'", "goto": "answer_service_question"},
+        {"when": "intent == 'symptom_described'", "goto": "suggest_specialty"},
+        {"when": "intent == 'check_result'", "goto": "check_result"},
+        {"when": "intent == 'cancel_appointment'", "goto": "handle_cancel"},
+        {"when": "intent == 'speak_to_staff'", "goto": "handoff_to_staff"},
+        {
+          "when": "(intent == 'book_appointment') && slot.specialty != null && slot.patient_name != null && slot.appointment_date != null",
+          "goto": "check_availability",
+          "note": "Khách nói 1 câu đủ thông tin — bỏ qua các bước collect"
+        },
+        {
+          "when": "(intent == 'book_appointment') && slot.specialty != null && slot.patient_name != null",
+          "goto": "collect_date"
+        },
+        {
+          "when": "(intent == 'book_appointment') && slot.specialty != null",
+          "goto": "collect_name"
+        },
+        {"when": "intent == 'book_appointment'", "goto": "collect_specialty"}
+      ],
+      "fallback_goto": "handoff_to_staff",
+      "max_no_match": 3
+    },
+
+    {
+      "id": "suggest_specialty",
+      "type": "speak_listen",
+      "slot_autofill": true,
+      "rag_queries": [
+        {
+          "id": "specialty_match",
+          "template": "triệu chứng {{slot.symptom_description}} nên khám chuyên khoa nào tại DoctorCheck",
+          "tags": ["services", "specialties"],
+          "bind_to": "rag.suggested_specialty"
+        }
+      ],
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "Dựa vào triệu chứng bạn mô tả,", "pause_after": "short"},
+            {"text": "{{rag.suggested_specialty.summary}}", "pause_after": "medium"},
+            {"text": "Bạn có muốn đặt lịch khám chuyên khoa này không ạ?", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "v_no_rag",
+          "condition": "rag.suggested_specialty == null",
+          "beats": [
+            {"text": "Tôi hiểu rồi.", "pause_after": "short"},
+            {"text": "Để được tư vấn chính xác hơn, bạn muốn đặt khám tổng quát trước hay chuyên khoa cụ thể ạ?", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "reprompt_variants": [
+        {
+          "id": "r1",
+          "beats": [
+            {"text": "Bạn có muốn đặt khám không ạ?", "pause_after": "medium"},
+            {"text": "Nói có để tôi tiếp tục, hoặc cho tôi biết chuyên khoa bạn muốn.", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r2",
+          "beats": [
+            {"text": "Tôi chuyển bạn sang nhân viên để tư vấn chi tiết hơn nhé ạ.", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "transitions": [
+        {"when": "intent == 'confirm' && slot.specialty != null", "goto": "collect_name"},
+        {"when": "intent == 'confirm'", "goto": "collect_name"},
+        {"when": "intent == 'deny'", "goto": "collect_specialty"},
+        {"when": "slot.specialty != null", "goto": "collect_name"}
+      ],
+      "fallback_goto": "handoff_to_staff",
+      "max_no_match": 2
+    },
+
+    {
+      "id": "answer_service_question",
+      "type": "speak_listen",
+      "slot_autofill": true,
+      "rag_queries": [
+        {
+          "id": "service_info",
+          "template": "thông tin dịch vụ {{slot.specialty}} tại DoctorCheck giá thời gian yêu cầu",
+          "tags": ["services", "pricing"],
+          "bind_to": "rag.service_info"
+        }
+      ],
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "{{rag.service_info.summary}}", "pause_after": "long"},
+            {"text": "Bạn còn muốn hỏi thêm gì không,", "pause_after": "short"},
+            {"text": "hay bạn muốn đặt lịch luôn ạ?", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "v_no_rag",
+          "condition": "rag.service_info == null",
+          "beats": [
+            {"text": "Để tư vấn chính xác hơn về dịch vụ bạn cần,", "pause_after": "short"},
+            {"text": "tôi xin chuyển bạn sang nhân viên chuyên trách ạ.", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "reprompt_variants": [
+        {
+          "id": "r1",
+          "beats": [
+            {"text": "Bạn có muốn đặt lịch khám không ạ?", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r2",
+          "beats": [
+            {"text": "Tôi có thể hỗ trợ đặt lịch hoặc chuyển bạn tới nhân viên ạ.", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "transitions": [
+        {
+          "when": "(intent == 'book_appointment' || intent == 'confirm') && slot.specialty != null && slot.patient_name != null && slot.appointment_date != null",
+          "goto": "check_availability"
+        },
+        {
+          "when": "(intent == 'book_appointment' || intent == 'confirm') && slot.specialty != null",
+          "goto": "collect_name"
+        },
+        {"when": "intent == 'book_appointment' || intent == 'confirm'", "goto": "collect_specialty"},
+        {"when": "intent == 'ask_price'", "goto": "answer_service_question"},
+        {"when": "intent == 'deny' || intent == 'no_booking'", "goto": "closing_no_booking"},
+        {"when": "intent == 'speak_to_staff'", "goto": "handoff_to_staff"}
+      ],
+      "fallback_goto": "handoff_to_staff",
+      "max_no_match": 3
+    },
+
+    {
+      "id": "collect_specialty",
+      "type": "speak_listen",
+      "slot_autofill": true,
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "Bạn muốn khám chuyên khoa gì ạ?", "pause_after": "medium"},
+            {"text": "Ví dụ như nội khoa, tim mạch, da liễu, sản phụ khoa, nha khoa, hoặc khám tổng quát.", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "reprompt_variants": [
+        {
+          "id": "r1",
+          "beats": [
+            {"text": "Tôi chưa nghe rõ tên chuyên khoa.", "pause_after": "short"},
+            {"text": "Bạn muốn khám gì ạ, ví dụ nội khoa, da liễu, hay tim mạch?", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r2",
+          "beats": [
+            {"text": "Nếu bạn chưa chắc nên khám khoa nào,", "pause_after": "short"},
+            {"text": "bạn có thể mô tả triệu chứng để tôi tư vấn ạ.", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r3",
+          "beats": [
+            {"text": "Tôi xin chuyển sang nhân viên để tư vấn trực tiếp cho bạn ạ.", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "transitions": [
+        {
+          "when": "slot.specialty != null && slot.patient_name != null && slot.appointment_date != null",
+          "goto": "check_availability"
+        },
+        {"when": "slot.specialty != null && slot.patient_name != null", "goto": "collect_date"},
+        {"when": "slot.specialty != null", "goto": "collect_name"},
+        {"when": "intent == 'service_inquiry'", "goto": "answer_service_question"},
+        {"when": "intent == 'symptom_described'", "goto": "suggest_specialty"}
+      ],
+      "fallback_goto": "handoff_to_staff",
+      "max_no_match": 3
+    },
+
+    {
+      "id": "collect_name",
+      "type": "speak_listen",
+      "slot_autofill": true,
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "Cho tôi hỏi tên của bạn hoặc tên bệnh nhân là gì ạ?", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "reprompt_variants": [
+        {
+          "id": "r1",
+          "beats": [
+            {"text": "Bạn có thể cho tôi họ và tên đầy đủ của bệnh nhân không ạ?", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r2",
+          "beats": [
+            {"text": "Ví dụ: tên tôi là Nguyễn Văn An ạ.", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r3",
+          "beats": [
+            {"text": "Tôi xin chuyển bạn tới nhân viên để hỗ trợ ạ.", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "transitions": [
+        {
+          "when": "slot.patient_name != null && slot.appointment_date != null",
+          "goto": "check_availability"
+        },
+        {"when": "slot.patient_name != null", "goto": "collect_date"}
+      ],
+      "fallback_goto": "handoff_to_staff",
+      "max_no_match": 3
+    },
+
+    {
+      "id": "collect_date",
+      "type": "speak_listen",
+      "slot_autofill": true,
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "Hôm nay là {{today_full}}.", "pause_after": "medium"},
+            {"text": "Bạn muốn đặt lịch khám vào ngày nào ạ?", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "reprompt_variants": [
+        {
+          "id": "r1",
+          "beats": [
+            {"text": "Bạn cho tôi ngày khám mong muốn nhé ạ,", "pause_after": "short"},
+            {"text": "ví dụ hôm nay, ngày mai, hoặc ngày cụ thể.", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r2",
+          "beats": [
+            {"text": "Hoặc nếu bạn linh động về ngày, tôi có thể báo ngày gần nhất còn trống ạ.", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r3",
+          "beats": [
+            {"text": "Tôi chuyển sang nhân viên hỗ trợ đặt lịch cho bạn ạ.", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "transitions": [
+        {"when": "slot.appointment_date != null", "goto": "check_availability"},
+        {"when": "intent == 'flexible_date'", "goto": "check_availability_flexible"}
+      ],
+      "fallback_goto": "handoff_to_staff",
+      "max_no_match": 3
+    },
+
+    {
+      "id": "check_availability",
+      "type": "speak_listen",
+      "slot_autofill": true,
+      "rag_queries": [
+        {
+          "id": "avail_query",
+          "template": "lịch còn trống khám {{slot.specialty}} ngày {{slot.appointment_date}} tại DoctorCheck",
+          "tags": ["schedule", "availability"],
+          "bind_to": "rag.available_slots",
+          "required": true
+        }
+      ],
+      "variants": [
+        {
+          "id": "v_has_slots",
+          "condition": "rag.available_slots.count > 0",
+          "beats": [
+            {"text": "Ngày {{slot.appointment_date}} còn trống lịch khám {{slot.specialty}}.", "pause_after": "medium"},
+            {"text": "{{rag.available_slots.options_spoken}}", "pause_after": "medium"},
+            {"text": "Bạn muốn đặt giờ nào ạ?", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "v_no_slots",
+          "condition": "rag.available_slots.count == 0",
+          "beats": [
+            {"text": "Rất tiếc, ngày {{slot.appointment_date}} đã kín lịch khám {{slot.specialty}} rồi ạ.", "pause_after": "medium"},
+            {"text": "Ngày gần nhất còn trống là {{rag.available_slots.next_date}},", "pause_after": "short"},
+            {"text": "vào lúc {{rag.available_slots.next_slot}}.", "pause_after": "medium"},
+            {"text": "Bạn có muốn đặt ngày đó không ạ?", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "v_rag_unavailable",
+          "condition": "rag.available_slots == null",
+          "beats": [
+            {"text": "Để kiểm tra lịch trống chính xác,", "pause_after": "short"},
+            {"text": "tôi cần kết nối bạn với nhân viên để xác nhận ạ.", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "reprompt_variants": [
+        {
+          "id": "r1",
+          "beats": [
+            {"text": "Bạn chọn giờ nào trong các khung giờ tôi vừa nêu ạ?", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r2",
+          "beats": [
+            {"text": "Nếu không phù hợp, bạn có thể chọn ngày khác ạ.", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r3",
+          "beats": [
+            {"text": "Tôi kết nối bạn tới nhân viên để đặt lịch trực tiếp nhé ạ.", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "transitions": [
+        {
+          "when": "slot.time_slot != null",
+          "goto": "collect_phone"
+        },
+        {
+          "when": "intent == 'confirm' && rag.available_slots.count == 0",
+          "goto": "accept_alternative_date"
+        },
+        {
+          "when": "intent == 'deny' && rag.available_slots.count == 0",
+          "goto": "collect_date"
+        },
+        {
+          "when": "rag.available_slots == null",
+          "goto": "handoff_to_staff"
+        }
+      ],
+      "fallback_goto": "handoff_to_staff",
+      "max_no_match": 3
+    },
+
+    {
+      "id": "check_availability_flexible",
+      "type": "speak_listen",
+      "slot_autofill": true,
+      "rag_queries": [
+        {
+          "id": "avail_flexible",
+          "template": "lịch còn trống gần nhất khám {{slot.specialty}} trong 7 ngày tới tại DoctorCheck",
+          "tags": ["schedule", "availability"],
+          "bind_to": "rag.flexible_slots"
+        }
+      ],
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "Các lịch còn trống gần nhất cho {{slot.specialty}} là:", "pause_after": "medium"},
+            {"text": "{{rag.flexible_slots.top3_spoken}}", "pause_after": "long"},
+            {"text": "Bạn muốn chọn ngày giờ nào ạ?", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "transitions": [
+        {"when": "slot.time_slot != null && slot.appointment_date != null", "goto": "collect_phone"}
+      ],
+      "fallback_goto": "handoff_to_staff",
+      "max_no_match": 2
+    },
+
+    {
+      "id": "accept_alternative_date",
+      "type": "speak",
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "Được ạ, tôi ghi nhận lịch hẹn vào {{rag.available_slots.next_date}}, {{rag.available_slots.next_slot}}.", "pause_after": "medium"},
+            {"text": "Tôi tiếp tục xác nhận thông tin nhé ạ.", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "goto": "collect_phone"
+    },
+
+    {
+      "id": "collect_phone",
+      "type": "speak_listen",
+      "slot_autofill": true,
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "Tôi cần số điện thoại để gửi tin nhắn xác nhận lịch hẹn cho bạn ạ.", "pause_after": "medium"},
+            {"text": "Số điện thoại của bạn là gì ạ?", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "reprompt_variants": [
+        {
+          "id": "r1",
+          "beats": [
+            {"text": "Bạn cho tôi số điện thoại để nhận tin xác nhận nhé ạ.", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r2",
+          "beats": [
+            {"text": "Ví dụ: số của tôi là 0912 345 678 ạ.", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r3",
+          "beats": [
+            {"text": "Nếu bạn không muốn cung cấp, tôi vẫn có thể đặt lịch nhưng sẽ không gửi được tin nhắn xác nhận ạ.", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "transitions": [
+        {"when": "slot.phone != null", "goto": "prep_instructions"},
+        {"when": "intent == 'skip_phone'", "goto": "prep_instructions"}
+      ],
+      "fallback_goto": "prep_instructions",
+      "max_no_match": 3
+    },
+
+    {
+      "id": "prep_instructions",
+      "type": "speak_listen",
+      "rag_queries": [
+        {
+          "id": "prep_query",
+          "template": "chuẩn bị trước khi khám {{slot.specialty}} tại DoctorCheck cần mang gì nhịn ăn không",
+          "tags": ["preparation", "services"],
+          "bind_to": "rag.prep_info"
+        }
+      ],
+      "variants": [
+        {
+          "id": "v1",
+          "condition": "rag.prep_info != null",
+          "beats": [
+            {"text": "Trước khi đến khám {{slot.specialty}},", "pause_after": "short"},
+            {"text": "{{rag.prep_info.summary}}", "pause_after": "long"},
+            {"text": "Bạn có câu hỏi gì thêm không ạ?", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "v_no_rag",
+          "condition": "rag.prep_info == null",
+          "beats": [
+            {"text": "Bạn nhớ mang theo chứng minh nhân dân hoặc căn cước công dân khi đến khám nhé ạ.", "pause_after": "medium"},
+            {"text": "Bạn có câu hỏi gì thêm không ạ?", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "reprompt_variants": [
+        {
+          "id": "r1",
+          "beats": [
+            {"text": "Bạn có thắc mắc gì về buổi khám không ạ?", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r2",
+          "beats": [
+            {"text": "Tôi tiếp tục xác nhận thông tin đặt lịch nhé ạ.", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "transitions": [
+        {"when": "intent == 'deny' || intent == 'no_question' || intent == 'confirm'", "goto": "confirm_booking"},
+        {"when": "intent == 'ask_price'", "goto": "answer_price_inline"},
+        {"when": "intent == 'ask_prep'", "goto": "answer_prep_detail_inline"},
+        {"when": "intent == 'speak_to_staff'", "goto": "handoff_to_staff"},
+        {"when": "true", "goto": "confirm_booking"}
+      ],
+      "fallback_goto": "confirm_booking",
+      "max_no_match": 2
+    },
+
+    {
+      "id": "answer_price_inline",
+      "type": "speak_listen",
+      "rag_queries": [
+        {
+          "id": "price_query",
+          "template": "giá khám {{slot.specialty}} tại DoctorCheck chi phí bảo hiểm",
+          "tags": ["pricing", "insurance"],
+          "bind_to": "rag.price_info"
+        }
+      ],
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "{{rag.price_info.summary}}", "pause_after": "long"},
+            {"text": "Bạn còn câu hỏi nào nữa không ạ?", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "transitions": [
+        {"when": "intent == 'deny' || intent == 'no_question' || intent == 'confirm'", "goto": "confirm_booking"},
+        {"when": "true", "goto": "confirm_booking"}
+      ],
+      "fallback_goto": "confirm_booking",
+      "max_no_match": 2
+    },
+
+    {
+      "id": "answer_prep_detail_inline",
+      "type": "speak_listen",
+      "rag_queries": [
+        {
+          "id": "prep_detail",
+          "template": "chi tiết chuẩn bị khám {{slot.specialty}} nhịn ăn thời gian hồ sơ cần thiết",
+          "tags": ["preparation"],
+          "bind_to": "rag.prep_detail"
+        }
+      ],
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "{{rag.prep_detail.summary}}", "pause_after": "long"},
+            {"text": "Bạn còn thắc mắc gì không ạ?", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "transitions": [
+        {"when": "true", "goto": "confirm_booking"}
+      ],
+      "fallback_goto": "confirm_booking",
+      "max_no_match": 1
+    },
+
+    {
+      "id": "confirm_booking",
+      "type": "speak_listen",
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "Được rồi, để tôi xác nhận lại toàn bộ thông tin:", "pause_after": "medium"},
+            {"text": "Khám {{slot.specialty}}", "pause_after": "short"},
+            {"text": "cho {{slot.patient_name}},", "pause_after": "medium"},
+            {"text": "vào {{slot.appointment_date}},", "pause_after": "short"},
+            {"text": "lúc {{slot.time_slot}}.", "pause_after": "medium"},
+            {"text": "Xác nhận qua số {{slot.phone}}.", "pause_after": "long"},
+            {"text": "Thông tin này đúng chưa ạ?", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "v1_no_phone",
+          "condition": "slot.phone == null",
+          "beats": [
+            {"text": "Vâng, để tôi xác nhận lại:", "pause_after": "medium"},
+            {"text": "Khám {{slot.specialty}}", "pause_after": "short"},
+            {"text": "cho {{slot.patient_name}},", "pause_after": "medium"},
+            {"text": "vào {{slot.appointment_date}}, lúc {{slot.time_slot}}.", "pause_after": "long"},
+            {"text": "Thông tin này đúng chưa ạ?", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "reprompt_variants": [
+        {
+          "id": "r1",
+          "beats": [
+            {"text": "Bạn xác nhận đặt lịch chưa ạ?", "pause_after": "medium"},
+            {"text": "Nói đúng để hoàn tất, hoặc nói thông tin cần sửa.", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r2",
+          "beats": [
+            {"text": "Nói đúng rồi hoặc xác nhận để đặt lịch, hoặc cho tôi biết cần sửa gì ạ.", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r3",
+          "beats": [
+            {"text": "Tôi kết nối bạn tới nhân viên để hoàn tất đặt lịch ạ.", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "transitions": [
+        {"when": "intent == 'confirm'", "goto": "booking_success"},
+        {"when": "intent == 'deny' || intent == 'request_change'", "goto": "ask_what_to_change"},
+        {"when": "intent == 'change_date'", "goto": "collect_date"},
+        {"when": "intent == 'change_time'", "goto": "check_availability"},
+        {"when": "intent == 'change_specialty'", "goto": "collect_specialty"},
+        {"when": "intent == 'change_name'", "goto": "collect_name"},
+        {"when": "intent == 'change_phone'", "goto": "collect_phone"}
+      ],
+      "fallback_goto": "handoff_to_staff",
+      "max_no_match": 3
+    },
+
+    {
+      "id": "ask_what_to_change",
+      "type": "speak_listen",
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "Bạn muốn thay đổi thông tin nào ạ?", "pause_after": "medium"},
+            {"text": "Chuyên khoa, tên bệnh nhân, ngày khám, giờ khám, hay số điện thoại?", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "reprompt_variants": [
+        {
+          "id": "r1",
+          "beats": [
+            {"text": "Bạn nói tên mục cần sửa: chuyên khoa, tên, ngày, giờ, hay số điện thoại ạ.", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r2",
+          "beats": [
+            {"text": "Nếu thông tin đã đúng, vui lòng nói xác nhận ạ.", "pause_after": "turn"}
+          ]
+        },
+        {
+          "id": "r3",
+          "beats": [
+            {"text": "Tôi chuyển bạn sang nhân viên hỗ trợ trực tiếp ạ.", "pause_after": "turn"}
+          ]
+        }
+      ],
+      "transitions": [
+        {"when": "intent == 'change_specialty'", "goto": "collect_specialty"},
+        {"when": "intent == 'change_name'", "goto": "collect_name"},
+        {"when": "intent == 'change_date'", "goto": "collect_date"},
+        {"when": "intent == 'change_time'", "goto": "check_availability"},
+        {"when": "intent == 'change_phone'", "goto": "collect_phone"},
+        {"when": "intent == 'confirm' || intent == 'no_change'", "goto": "confirm_booking"}
+      ],
+      "fallback_goto": "handoff_to_staff",
+      "max_no_match": 3
+    },
+
+    {
+      "id": "booking_success",
+      "type": "speak",
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "Tuyệt vời ạ.", "pause_after": "medium"},
+            {"text": "Lịch khám {{slot.specialty}} cho {{slot.patient_name}}", "pause_after": "short"},
+            {"text": "vào {{slot.appointment_date}}, lúc {{slot.time_slot}}", "pause_after": "medium"},
+            {"text": "đã được đặt thành công.", "pause_after": "medium"},
+            {"text": "Phòng khám sẽ gửi tin nhắn xác nhận trong vài phút tới.", "pause_after": "medium"},
+            {"text": "Nếu cần thay đổi, bạn gọi lại đường dây này trước hai mươi bốn giờ nhé ạ.", "pause_after": "long"},
+            {"text": "Cảm ơn bạn đã tin tưởng DoctorCheck.", "pause_after": "medium"},
+            {"text": "Chúc bạn và gia đình sức khỏe ạ.", "pause_after": "long"}
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": "closing_no_booking",
+      "type": "speak",
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "Không sao ạ.", "pause_after": "short"},
+            {"text": "Khi nào bạn cần đặt lịch, phòng khám DoctorCheck luôn sẵn sàng hỗ trợ.", "pause_after": "medium"},
+            {"text": "Chúc bạn sức khỏe ạ.", "pause_after": "long"}
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": "check_result",
+      "type": "handoff",
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "Để tra cứu kết quả xét nghiệm,", "pause_after": "short"},
+            {"text": "tôi chuyển bạn sang bộ phận chuyên trách ạ.", "pause_after": "turn"}
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": "handle_cancel",
+      "type": "handoff",
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "Để hủy hoặc đổi lịch hẹn,", "pause_after": "short"},
+            {"text": "tôi cần kết nối bạn với nhân viên để xác nhận thông tin ạ.", "pause_after": "turn"}
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": "handoff_to_staff",
+      "type": "handoff",
+      "variants": [
+        {
+          "id": "v1",
+          "beats": [
+            {"text": "Tôi sẽ chuyển bạn sang nhân viên hỗ trợ trực tiếp ạ.", "pause_after": "medium"},
+            {"text": "Vui lòng chờ giây lát.", "pause_after": "turn"}
+          ]
+        }
+      ]
+    }
+  ],
+
+  "intents": [
+    {
+      "intent": "book_appointment",
+      "examples": [
+        {"text": "tôi muốn đặt lịch khám"},
+        {"text": "đặt hẹn khám bệnh"},
+        {"text": "cho tôi đặt lịch"},
+        {"text": "tôi cần khám bác sĩ"},
+        {"text": "đăng ký khám"},
+        {"text": "đặt lịch"},
+        {"text": "muốn đặt khám"},
+        {"text": "tôi muốn khám da liễu ngày mai sáng"},
+        {"text": "đặt cho tôi lịch tim mạch tuần sau"}
+      ],
+      "slots": ["appointment_date", "time_slot", "specialty", "patient_name", "phone"]
+    },
+    {
+      "intent": "service_inquiry",
+      "examples": [
+        {"text": "tôi muốn hỏi về dịch vụ"},
+        {"text": "khám tổng quát gồm những gì"},
+        {"text": "khám da liễu giá bao nhiêu"},
+        {"text": "tôi muốn biết thêm về"},
+        {"text": "dịch vụ khám của phòng khám"},
+        {"text": "có khám tim mạch không"},
+        {"text": "cho tôi hỏi về chuyên khoa"},
+        {"text": "khám mất bao lâu"},
+        {"text": "có hỗ trợ bảo hiểm y tế không"}
+      ]
+    },
+    {
+      "intent": "symptom_described",
+      "examples": [
+        {"text": "tôi hay bị đau đầu dạo này"},
+        {"text": "tim tôi đập nhanh bất thường"},
+        {"text": "da tôi nổi mẩn ngứa"},
+        {"text": "tôi bị đau bụng mãi"},
+        {"text": "tôi không biết cần khám gì"},
+        {"text": "gần đây tôi hay mệt mỏi"},
+        {"text": "tôi có triệu chứng"}
+      ],
+      "slots": ["symptom_description"]
+    },
+    {
+      "intent": "flexible_date",
+      "examples": [
+        {"text": "ngày nào cũng được"},
+        {"text": "tôi linh động về ngày"},
+        {"text": "ngày nào gần nhất còn trống"},
+        {"text": "bạn có lịch trống ngày nào"},
+        {"text": "ngày gần nhất"}
+      ]
+    },
+    {
+      "intent": "ask_price",
+      "examples": [
+        {"text": "giá bao nhiêu"},
+        {"text": "chi phí khám"},
+        {"text": "phí khám là bao nhiêu"},
+        {"text": "có bảo hiểm không"},
+        {"text": "mất bao nhiêu tiền"},
+        {"text": "giá dịch vụ"}
+      ]
+    },
+    {
+      "intent": "ask_prep",
+      "examples": [
+        {"text": "cần chuẩn bị gì"},
+        {"text": "phải nhịn ăn không"},
+        {"text": "cần mang gì theo"},
+        {"text": "có cần hẹn trước không"},
+        {"text": "cần làm gì trước khi khám"},
+        {"text": "chuẩn bị như thế nào"}
+      ]
+    },
+    {
+      "intent": "no_question",
+      "examples": [
+        {"text": "không có gì"},
+        {"text": "không cần hỏi"},
+        {"text": "đủ rồi"},
+        {"text": "không còn thắc mắc"},
+        {"text": "không hỏi thêm"},
+        {"text": "thôi được"}
+      ]
+    },
+    {
+      "intent": "skip_phone",
+      "examples": [
+        {"text": "thôi không cần"},
+        {"text": "không cần tin nhắn"},
+        {"text": "bỏ qua"},
+        {"text": "không muốn cho số"},
+        {"text": "thôi đặt luôn đi"}
+      ]
+    },
+    {
+      "intent": "no_booking",
+      "examples": [
+        {"text": "thôi tôi chưa đặt"},
+        {"text": "để lần sau"},
+        {"text": "tôi chỉ hỏi thôi"},
+        {"text": "không cần đặt"},
+        {"text": "thôi không"}
+      ]
+    },
+    {
+      "intent": "confirm",
+      "examples": [
+        {"text": "đúng"}, {"text": "đúng rồi"}, {"text": "có"}, {"text": "xác nhận"},
+        {"text": "ok"}, {"text": "được"}, {"text": "vâng"}, {"text": "ừ"},
+        {"text": "oke"}, {"text": "chính xác"}, {"text": "đồng ý"}, {"text": "đúng vậy"},
+        {"text": "thông tin đúng"}, {"text": "tôi xác nhận"}, {"text": "đặt luôn đi"}
+      ]
+    },
+    {
+      "intent": "deny",
+      "examples": [
+        {"text": "không"}, {"text": "sai rồi"}, {"text": "chưa đúng"},
+        {"text": "không phải"}, {"text": "sai"}, {"text": "không đồng ý"},
+        {"text": "thông tin sai"}, {"text": "không chính xác"}
+      ]
+    },
+    {
+      "intent": "request_change",
+      "examples": [
+        {"text": "muốn đổi"}, {"text": "cần sửa lại"}, {"text": "thông tin chưa đúng"},
+        {"text": "thay đổi thông tin"}, {"text": "sửa thông tin"}, {"text": "đổi lại"}
+      ]
+    },
+    {
+      "intent": "change_date",
+      "examples": [
+        {"text": "đổi ngày"}, {"text": "ngày khác"}, {"text": "thay ngày"},
+        {"text": "đổi ngày khám"}, {"text": "muốn đổi ngày"}, {"text": "sửa ngày"}
+      ]
+    },
+    {
+      "intent": "change_time",
+      "examples": [
+        {"text": "đổi giờ"}, {"text": "đổi buổi"}, {"text": "giờ khác"},
+        {"text": "buổi khác"}, {"text": "thay đổi giờ"}, {"text": "muốn đổi giờ"},
+        {"text": "đổi sang sáng"}, {"text": "đổi sang chiều"}
+      ]
+    },
+    {
+      "intent": "change_specialty",
+      "examples": [
+        {"text": "đổi chuyên khoa"}, {"text": "chuyên khoa khác"},
+        {"text": "thay chuyên khoa"}, {"text": "đổi khoa"}
+      ]
+    },
+    {
+      "intent": "change_name",
+      "examples": [
+        {"text": "đổi tên"}, {"text": "sửa tên"}, {"text": "tên sai"},
+        {"text": "tên không đúng"}, {"text": "muốn đổi tên"}
+      ]
+    },
+    {
+      "intent": "change_phone",
+      "examples": [
+        {"text": "đổi số điện thoại"}, {"text": "sửa số"}, {"text": "số sai"},
+        {"text": "số điện thoại khác"}, {"text": "đổi sđt"}
+      ]
+    },
+    {
+      "intent": "no_change",
+      "examples": [
+        {"text": "không đổi"}, {"text": "không cần sửa"}, {"text": "giữ nguyên"},
+        {"text": "không thay đổi"}, {"text": "đúng hết rồi"}, {"text": "thông tin chính xác"}
+      ]
+    },
+    {
+      "intent": "check_result",
+      "examples": [
+        {"text": "tôi muốn xem kết quả xét nghiệm"}, {"text": "kết quả xét nghiệm của tôi"},
+        {"text": "tra cứu kết quả"}, {"text": "xem kết quả khám bệnh"}
+      ]
+    },
+    {
+      "intent": "cancel_appointment",
+      "examples": [
+        {"text": "tôi muốn hủy lịch"}, {"text": "hủy hẹn khám"},
+        {"text": "đổi lịch khám"}, {"text": "hủy lịch"}, {"text": "muốn hủy"}
+      ]
+    },
+    {
+      "intent": "speak_to_staff",
+      "examples": [
+        {"text": "cho tôi nói chuyện với nhân viên"}, {"text": "kết nối tới tổng đài viên"},
+        {"text": "tôi muốn nói chuyện với người thật"}, {"text": "chuyển máy cho tôi"},
+        {"text": "gặp nhân viên"}, {"text": "tôi muốn gặp người"}
+      ]
+    }
+  ]
+}

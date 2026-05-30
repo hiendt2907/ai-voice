@@ -5,6 +5,8 @@ export const BeatSchema = z.object({
   text: z.string().min(1),
   pause_after: z.enum(PAUSE_TIERS).default('none'),
   role: z.enum(BEAT_ROLES).default('agent'),
+  speaking_rate: z.number().min(0.5).max(1.5).optional(),
+  emphasis: z.boolean().optional(),
 })
 
 export const VariantSchema = z.object({
@@ -22,14 +24,26 @@ export const TransitionSchema = z.object({
   goto: z.string(),
 })
 
+const OnReceiveSchema = z.object({
+  filler_context: z.enum([
+    'none', 'thinking', 'ack', 'ack_slot', 'checking', 'confirming',
+  ]).default('thinking'),
+})
+
 export const StepSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9_]*$/, 'Step id must be snake_case'),
-  type: z.enum(STEP_TYPES),
+  type: z.enum([...STEP_TYPES, 'api_call'] as [string, ...string[]]),
   variants: z.array(VariantSchema).min(1),
   reprompt_variants: z.array(VariantSchema).min(3).optional(),
   transitions: z.array(TransitionSchema).optional(),
   fallback_goto: z.string().optional(),
   max_no_match: z.number().int().positive().default(3),
+  on_receive: OnReceiveSchema.optional(),
+  // api_call step fields
+  apiAction: z.enum(['check_availability', 'confirm_booking']).optional(),
+  onSuccess: z.string().optional(),
+  onUnavailable: z.string().optional(),
+  onFail: z.string().optional(),
 })
 
 export const IntentCatalogSchema = z.object({

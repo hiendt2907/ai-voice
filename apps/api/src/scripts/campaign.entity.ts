@@ -25,6 +25,9 @@ export class Campaign {
   @Column({ default: false })
   isActive: boolean
 
+  @Column({ type: 'uuid', nullable: true })
+  publishedVersionId: string | null
+
   @OneToMany('ScriptVersion', 'campaign')
   versions: ScriptVersion[]
 

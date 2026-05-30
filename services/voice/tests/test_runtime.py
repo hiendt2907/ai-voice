@@ -206,8 +206,8 @@ def test_match_no_match():
 
 def test_extract_date_slot():
     result = match_intent("ngày 15 tháng 6", [])
-    assert result.slots.get("date") is not None
-    assert "15" in result.slots["date"]
+    assert result.slots.get("appointment_date") is not None
+    assert "15" in result.slots["appointment_date"]
 
 
 def test_extract_time_of_day_morning():

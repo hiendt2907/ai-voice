@@ -113,6 +113,20 @@ uv run uvicorn app.main:app --reload
 | **S6** | ✅ ODS client stub + Dashboard live monitor (ODS schema pending from CloudFone) |
 | **S7** | ✅ Analytics dashboard scaffold — Reports page (charts in next iteration) |
 | **S8** | ✅ Learning proposals + HITL review queue — LearningProposal entity, approve/reject API |
+| **SA** | ✅ Portal auth E2E — /login page, httpOnly cookie, Next.js middleware, serverFetch, seed users (POST /dev/seed), /audit page, route group restructure |
+| **SB** | ✅ Script workflow wired — PATCH /scripts/:id (toggle isActive), publishedVersionId FK, VersionActions + CampaignToggle client components |
+| **SC** | ✅ Dashboard real KPIs — AnalyticsModule (/analytics/overview, calls-by-day, qa-trends, duration), /health/deps (Postgres + Redis), Call detail with transcript + QA |
+| **SD** | ✅ Learning HITL wired — POST /learning/proposals/:id/apply, ProposalActions (approve/reject/apply) client component |
+| **SE** | ✅ Reports charts — SVG bar charts for calls-by-day + QA trends + duration table |
+| **SF** | ✅ CloudFone test — POST /settings/cloudfone/test, Test kết nối button in settings |
+| **SG** | ✅ Schema complete — 9 missing entities added (CallTurn, CallRecording, CallMetrics, LearningApplication, AnalyticsDaily, ServiceApiKey, VoiceProfile, HotlineRoute, RefreshToken), GET /calls/:id/turns+recording, POST /auth/refresh, refresh_token cookie flow |
+| **SH** | ✅ Knowledge Base RAG — KnowledgeModule (NestJS CRUD + rag-export), fastembed multilingual-e5-large, in-memory store + cosine search, gender detection F0 pitch analysis, /rag/* endpoints, Portal KB CMS (list/create/edit), sidebar nav |
+| **P1** | ✅ Phase 1 Real Call Loop — AudioPipeline wired (async/sync STT), background pipeline_task, barge-in via pipeline VAD, Simulator audio_frame mode |
+| **P2** | ✅ Phase 2 RAG in Call — LLM path removed from AiDrivenExecutor, vector RAG in process_utterance (rag_assisted mode), linkedKbTags tag filter in store.search() |
+| **P3** | ✅ Phase 3 Expert Handoff — Redis subscriber answer:{sessionId}, question_timeout=60s, Telegram callback_url, half-duplex gate, NestJS forward answer to voice worker |
+| **P4** | ✅ Phase 4 Call Persistence — POST /internal/call-events on hangup, dual-write call_turns + CallMetrics (bargeInCount, noMatchCount) |
+| **P5** | ✅ Phase 5 Audio Quality — half-duplex suppress (300ms), min_speech_duration_ms=200 (anti-echo), on_tts_start/end in VADDetector |
+| **P7** | ✅ Phase 7 Polish — Portal RBAC nav filtering by role, applyProposal merges payload, learning_applications row on apply, signal extractor noMatch→proposals |
 
 ## Call Script Contract
 

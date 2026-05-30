@@ -1,7 +1,16 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
+
+
+@dataclass(frozen=True)
+class PendingQuestion:
+    question_id: str
+    question_text: str
+    asked_at: float = field(default_factory=time.time)
+    timeout_seconds: int = 300
 
 
 @dataclass(frozen=True)
@@ -21,6 +30,7 @@ class SessionState:
     no_match_counts: dict[str, int] = field(default_factory=dict)
     status: Literal["active", "handoff", "completed"] = "active"
     transcript: tuple[TranscriptEntry, ...] = field(default_factory=tuple)
+    pending_questions: tuple[PendingQuestion, ...] = field(default_factory=tuple)
 
     def with_step(self, step_id: str) -> "SessionState":
         return replace(self, current_step_id=step_id)
@@ -33,6 +43,13 @@ class SessionState:
 
     def with_transcript_entry(self, entry: TranscriptEntry) -> "SessionState":
         return replace(self, transcript=(*self.transcript, entry))
+
+    def with_pending_question(self, q: PendingQuestion) -> "SessionState":
+        return replace(self, pending_questions=(*self.pending_questions, q))
+
+    def without_pending_question(self, question_id: str) -> "SessionState":
+        remaining = tuple(q for q in self.pending_questions if q.question_id != question_id)
+        return replace(self, pending_questions=remaining)
 
     def increment_no_match(self, step_id: str) -> "SessionState":
         counts = {**self.no_match_counts, step_id: self.no_match_counts.get(step_id, 0) + 1}
@@ -49,6 +66,15 @@ class SessionState:
             "slots": dict(self.slots),
             "no_match_counts": dict(self.no_match_counts),
             "status": self.status,
+            "pending_questions": [
+                {
+                    "question_id": q.question_id,
+                    "question_text": q.question_text,
+                    "asked_at": q.asked_at,
+                    "timeout_seconds": q.timeout_seconds,
+                }
+                for q in self.pending_questions
+            ],
             "transcript": [
                 {
                     "step_id": e.step_id,

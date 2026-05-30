@@ -11,6 +11,13 @@ import { CallsModule } from './calls/calls.module'
 import { InternalModule } from './internal/internal.module'
 import { LearningModule } from './learning/learning.module'
 import { SettingsModule } from './settings/settings.module'
+import { DevModule } from './dev/dev.module'
+import { AnalyticsModule } from './analytics/analytics.module'
+import { CallbacksModule } from './callbacks/callbacks.module'
+import { KnowledgeModule } from './knowledge/knowledge.module'
+import { NluModule } from './nlu/nlu.module'
+
+const isDev = process.env.NODE_ENV !== 'production'
 
 @Module({
   imports: [
@@ -28,9 +35,9 @@ import { SettingsModule } from './settings/settings.module'
         type: 'postgres',
         url: config.getOrThrow<string>('DATABASE_URL'),
         autoLoadEntities: true,
-        synchronize: process.env.NODE_ENV !== 'production',
+        synchronize: isDev,
         migrations: ['dist/migrations/*.js'],
-        migrationsRun: process.env.NODE_ENV === 'production',
+        migrationsRun: !isDev,
       }),
     }),
     AuthModule,
@@ -42,6 +49,11 @@ import { SettingsModule } from './settings/settings.module'
     InternalModule,
     LearningModule,
     SettingsModule,
+    AnalyticsModule,
+    CallbacksModule,
+    KnowledgeModule,
+    NluModule,
+    ...(isDev ? [DevModule] : []),
   ],
 })
 export class AppModule {}

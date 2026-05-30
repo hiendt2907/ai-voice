@@ -14,15 +14,18 @@ from typing import Any
 
 class InboundEvent(StrEnum):
     START = "start"
-    UTTERANCE = "utterance"  # mock STT result (real: audio frames)
+    AUDIO_FRAME = "audio_frame"         # real audio: base64 μ-law frame in "data"
+    UTTERANCE = "utterance"             # mock / test: pre-transcribed text
     DTMF = "dtmf"
     HANGUP = "hangup"
+    QUESTION_ANSWERED = "question_answered"  # answer injected from chat (Teams/Telegram)
 
 
 class OutboundEvent(StrEnum):
-    BEAT = "beat"          # one prosody beat to synthesise
-    HANDOFF = "handoff"    # transfer to human agent
-    HANGUP = "hangup"      # end call
+    AUDIO_CHUNK = "audio_chunk"  # real audio: base64 PCM chunk in "data"
+    BEAT = "beat"                # mock / test: prosody beat metadata
+    HANDOFF = "handoff"          # transfer to human agent
+    HANGUP = "hangup"            # end call
     ERROR = "error"
 
 
@@ -96,3 +99,25 @@ class HangupPayload:
 
     def to_dict(self) -> dict[str, Any]:
         return {"event": OutboundEvent.HANGUP, "step_id": self.step_id}
+
+
+@dataclass(frozen=True)
+class AudioChunkPayload:
+    data: str   # base64-encoded PCM bytes
+    turn: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"event": OutboundEvent.AUDIO_CHUNK, "data": self.data, "turn": self.turn}
+
+
+@dataclass(frozen=True)
+class QuestionAnsweredMessage:
+    question_id: str
+    answer: str
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "QuestionAnsweredMessage":
+        return cls(
+            question_id=d.get("question_id", ""),
+            answer=d.get("answer", ""),
+        )
