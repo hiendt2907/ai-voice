@@ -239,8 +239,11 @@ async def call_ws(ws: WebSocket, script_id: str = "") -> None:
         )
         await _send_beat(ws, beat)
         if tts:
-            audio = await tts.synthesize(text)
-            await _send_audio(ws, audio, cur_turn)
+            try:
+                audio = await tts.synthesize(text)
+                await _send_audio(ws, audio, cur_turn)
+            except Exception as tts_exc:
+                logger.warning("TTS synthesis failed (beat-only fallback): %s", tts_exc)
 
     # ── Phase 2: RAG-assisted turn ────────────────────────────────────────────
 
