@@ -48,6 +48,11 @@ def _build_tts(tts_cfg: TtsConfig, redis: object | None = None):  # type: ignore
             style=tts_cfg.elevenlabs_style,
             use_speaker_boost=tts_cfg.elevenlabs_use_speaker_boost,
         )
+    if tts_cfg.engine == "edge-tts":
+        from tts.edge_tts import EdgeTTS  # noqa: PLC0415
+        voice = tts_cfg.voice or "vi-VN-HoaiMyNeural"
+        logger.info("TTS engine: edge-tts (voice=%s)", voice)
+        return EdgeTTS(voice=voice)
     if tts_cfg.engine == "gwen-tts":
         from tts.synthesis import GwenTTS  # noqa: PLC0415
         logger.info("TTS engine: gwen-tts (model=%s)", settings.tts_model_id)

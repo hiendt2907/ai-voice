@@ -90,6 +90,8 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
   const [aiSpeaking, setAiSpeaking] = useState(false)
   const [micActive, setMicActive] = useState(false)
   const [useRealTts, setUseRealTts] = useState(true)
+  const [ttsEngine, setTtsEngine] = useState<string>('elevenlabs')
+  const [switchingEngine, setSwitchingEngine] = useState(false)
   const [hasSpeechRecognition, setHasSpeechRecognition] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -110,8 +112,14 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
   const micAutoRestartRef = useRef(false)
 
   useEffect(() => {
-    // Detect speech recognition support client-side only (avoids SSR hydration mismatch)
     setHasSpeechRecognition('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
+    // Load current TTS engine from settings
+    void fetch('/api/v1/settings/tts').then(async (r) => {
+      if (r.ok) {
+        const d = await r.json() as { engine?: string }
+        if (d.engine) setTtsEngine(d.engine)
+      }
+    })
   }, [])
 
   useEffect(() => {
@@ -373,11 +381,39 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
                 v{publishedVersion.version}
               </span>
             )}
+            {/* TTS engine switcher */}
+            <select
+              disabled={isRunning || switchingEngine}
+              value={ttsEngine}
+              onChange={(e) => {
+                const engine = e.target.value
+                setSwitchingEngine(true)
+                void fetch('/api/v1/settings/tts', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ engine, elevenlabsApiKey: '***' }),
+                }).then(() => {
+                  setTtsEngine(engine)
+                }).finally(() => setSwitchingEngine(false))
+              }}
+              className={[
+                'text-xs border rounded-lg px-2 py-1 bg-white text-[var(--color-text)] border-[var(--color-border)]',
+                'focus:outline-none focus:border-[var(--color-accent)]',
+                (isRunning || switchingEngine) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
+              ].join(' ')}
+              title="Chọn TTS engine — lưu ngay vào Settings"
+            >
+              <option value="elevenlabs">ElevenLabs</option>
+              <option value="edge-tts">edge-tts (miễn phí)</option>
+              <option value="gwen-tts">gwen-tts (local)</option>
+              <option value="disabled">Tắt TTS</option>
+            </select>
+
             {/* Real TTS toggle */}
             <button
               type="button"
               onClick={() => !isRunning && setUseRealTts((v) => !v)}
-              title={useRealTts ? 'Real TTS bật — dùng ElevenLabs/gwen-tts' : 'Text mode — chỉ nhận beat text'}
+              title={useRealTts ? 'Real TTS bật — gửi audio' : 'Text mode — chỉ nhận beat text'}
               className={[
                 'inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap',
                 useRealTts
@@ -387,7 +423,7 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
               ].join(' ')}
             >
               <Radio className="w-3 h-3" />
-              {useRealTts ? 'Real TTS' : 'Text mode'}
+              {useRealTts ? 'Audio' : 'Text'}
             </button>
             {audioMode && (
               <span className="inline-flex items-center gap-1 text-xs font-medium text-[oklch(50%_0.16_250)] bg-[oklch(95%_0.03_250)] px-2 py-0.5 rounded-full whitespace-nowrap">

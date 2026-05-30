@@ -22,6 +22,7 @@ dependencies = [
     "qwen-tts>=0.1.0",
     # RAG: lightweight ONNX-based embeddings (multilingual-e5-large)
     "fastembed>=0.3.0",
+    "edge-tts>=7.2.8",
 ]
 
 [project.optional-dependencies]
