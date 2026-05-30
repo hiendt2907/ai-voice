@@ -61,9 +61,12 @@ async def test_rag_answer_returned_when_store_has_match():
     executor = AiDrivenExecutor(body)
     await executor.process_turn("Xin chào", "sess-001")  # first turn
 
+    mock_search = AsyncMock(return_value=mock_search_result)
+    mock_cache = AsyncMock(return_value=None)
     with (
         patch("runtime.ai_executor.asyncio.get_running_loop") as mock_loop,
-        patch("rag.store.search", return_value=mock_search_result),
+        patch("rag.store.search", mock_search),
+        patch("rag.store.cache_lookup", mock_cache),
         patch("rag.embedder.embed_query", return_value=[0.1, 0.2]),
     ):
         mock_loop.return_value.run_in_executor = AsyncMock(return_value=[0.1, 0.2])

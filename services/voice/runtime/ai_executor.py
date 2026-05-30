@@ -97,17 +97,20 @@ class AiDrivenExecutor:
             from rag import store as rag_store  # noqa: PLC0415
             from rag.embedder import embed_query  # noqa: PLC0415
 
-            loop = asyncio.get_running_loop()
-            query_emb = await loop.run_in_executor(None, embed_query, utterance)
             from api.config import Settings as _Settings  # noqa: PLC0415
-
             _cfg = _Settings()
-            result = rag_store.search(
-                query_emb,
-                gender=gender,  # type: ignore[arg-type]
-                linked_kb_tags=self._linked_kb_tags,
-                max_threshold=_cfg.rag_confidence_default,
-            )
+
+            # Text cache check first (skip embedding on repeated queries)
+            result = await rag_store.cache_lookup(utterance, "", gender)  # type: ignore[arg-type]
+            if result is None:
+                loop = asyncio.get_running_loop()
+                query_emb = await loop.run_in_executor(None, embed_query, utterance)
+                result = await rag_store.search(
+                    query_emb,
+                    gender=gender,  # type: ignore[arg-type]
+                    linked_kb_tags=self._linked_kb_tags,
+                    max_threshold=_cfg.rag_confidence_default,
+                )
             if result is not None:
                 logger.info(
                     "RAG hit: score=%.3f article=%s", result.score, result.article.id

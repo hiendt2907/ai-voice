@@ -16,9 +16,20 @@ from cloudfone.protocol import (
     StartMessage,
     UtteranceMessage,
 )
+import nlu.store as nlu_store_module
 from runtime.executor import _process_with_match, async_process_turn, create_session
 from runtime.intent_matcher import MatchResult
 from runtime.session import SessionState
+
+
+@pytest.fixture(autouse=True)
+def isolate_nlu_store():
+    """Clear NLU store so tests use only script-local intents, not API-loaded data."""
+    saved = list(nlu_store_module._store)
+    nlu_store_module._store.clear()
+    yield
+    nlu_store_module._store.clear()
+    nlu_store_module._store.extend(saved)
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +45,7 @@ MINIMAL_SCRIPT = {
             "type": "speak_listen",
             "variants": [{"id": "v1", "beats": [{"text": "Xin chào", "pause_after": "turn"}]}],
             "reprompt_variants": [{"id": "r1", "beats": [{"text": "R1", "pause_after": "turn"}]}],
-            "transitions": [{"when": "intent == 'book'", "goto": "farewell"}],
+            "transitions": [{"when": "intent == 'book_appointment'", "goto": "farewell"}],
             "fallback_goto": "farewell",
             "max_no_match": 2,
         },
@@ -44,7 +55,7 @@ MINIMAL_SCRIPT = {
             "variants": [{"id": "v1", "beats": [{"text": "Tạm biệt.", "pause_after": "long"}]}],
         },
     ],
-    "intents": [{"intent": "book", "examples": [{"text": "đặt lịch"}]}],
+    "intents": [{"intent": "book_appointment", "examples": [{"text": "đặt lịch"}]}],
 }
 
 
@@ -127,9 +138,9 @@ def test_inbound_event_values():
 
 def test_process_with_match_intent_fires_transition():
     state = create_session(MINIMAL_SCRIPT)
-    match = MatchResult(intent="book", slots={}, confidence=0.9)
+    match = MatchResult(intent="book_appointment", slots={}, confidence=0.9)
     result = _process_with_match(state, MINIMAL_SCRIPT, "đặt lịch", match)
-    assert result.intent == "book"
+    assert result.intent == "book_appointment"
     assert result.next_step_id == "farewell"
     assert result.is_completed is False
 
@@ -166,7 +177,7 @@ async def test_async_process_turn_no_nlu():
     """With nlu=None, falls back to sync process_turn."""
     state = create_session(MINIMAL_SCRIPT)
     result = await async_process_turn(state, MINIMAL_SCRIPT, "đặt lịch", nlu=None)
-    assert result.intent == "book"
+    assert result.intent == "book_appointment"
     assert result.next_step_id == "farewell"
 
 
@@ -177,7 +188,7 @@ async def test_async_process_turn_with_nlu_success():
 
     mock_client = MagicMock()
     mock_client.chat = AsyncMock(return_value=json.dumps({
-        "intent": "book",
+        "intent": "book_appointment",
         "slots": {},
         "confidence": 0.95,
         "is_out_of_scope": False,
@@ -186,7 +197,7 @@ async def test_async_process_turn_with_nlu_success():
 
     state = create_session(MINIMAL_SCRIPT)
     result = await async_process_turn(state, MINIMAL_SCRIPT, "tôi muốn đặt lịch", nlu=nlu)
-    assert result.intent == "book"
+    assert result.intent == "book_appointment"
     assert result.next_step_id == "farewell"
 
 
@@ -199,7 +210,7 @@ async def test_async_process_turn_nlu_timeout_falls_back():
     nlu = LLMNLUClassifier(mock_client)
 
     state = create_session(MINIMAL_SCRIPT)
-    # "đặt lịch" matches the "book" intent in the example-based matcher
+    # "đặt lịch" triggers book_appointment via domain-specific intent inference
     result = await async_process_turn(state, MINIMAL_SCRIPT, "đặt lịch", nlu=nlu)
     assert result.next_step_id == "farewell"  # fallback matched
 
