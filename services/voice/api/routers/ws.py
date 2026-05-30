@@ -174,6 +174,8 @@ async def call_ws(ws: WebSocket, script_id: str = "") -> None:
     script_version_id: str | None = None
     caller_number: str | None = None
     caller_direction: str = "inbound"
+    interception_mode: str = "full"       # shadow | medium | full (set on START)
+    interception_domains: list[str] = []  # tags for medium mode domain filter
 
     # Phase 2: track last RAG score for call metadata
     last_rag_score: float | None = None
@@ -261,20 +263,27 @@ async def call_ws(ws: WebSocket, script_id: str = "") -> None:
         # Phase 2.3: gender detect from accumulated PCM (use slot if already set)
         gender = state.slots.get("gender", "unknown") if state else "unknown"  # type: ignore[union-attr]
 
-        # Embed and search
+        # Embed and search (text cache check first to skip embedding on repeated queries)
         try:
             from rag.embedder import embed_query  # noqa: PLC0415
 
-            loop = asyncio.get_running_loop()
-            query_emb = await loop.run_in_executor(None, embed_query, utterance)
             linked_tags: list[str] = script.get("linkedKbTags", [])
-            result = rag_store.search(
-                query_emb,
-                gender=gender,
-                linked_kb_tags=linked_tags,
-                max_threshold=_settings.rag_confidence_default,
-                campaign_id=campaign_id,
-            )
+
+            # 1. Text cache lookup — skip embedding entirely on hit
+            result = await rag_store.cache_lookup(utterance, campaign_id or "", gender)  # type: ignore[arg-type]
+
+            if result is None:
+                # 2. Embed + vector search
+                loop = asyncio.get_running_loop()
+                query_emb = await loop.run_in_executor(None, embed_query, utterance)
+                result = await rag_store.search(
+                    query_emb,
+                    gender=gender,
+                    linked_kb_tags=linked_tags,
+                    max_threshold=_settings.rag_confidence_default,
+                    campaign_id=campaign_id,
+                    query_text=utterance,
+                )
         except Exception as exc:
             logger.warning("RAG search error: %s", exc)
             result = None
@@ -283,11 +292,32 @@ async def call_ws(ws: WebSocket, script_id: str = "") -> None:
 
         if result is not None:
             last_rag_score = result.score
+
+            # Shadow mode: log would-have-said, no audio
+            if interception_mode == "shadow":
+                logger.info("[SHADOW] would-say: %.80s (score=%.3f)", result.answer, result.score)
+                tts_active = False
+                return
+
+            # Medium mode: only respond if article tags overlap with interception_domains
+            if interception_mode == "medium" and interception_domains:
+                article_tags = set(result.article.tags or [])
+                if result.article.category:
+                    article_tags.add(result.article.category)
+                if not article_tags & set(interception_domains):
+                    logger.info("[MEDIUM] domain mismatch — silent (article=%s)", result.article.id)
+                    tts_active = False
+                    return
+
             logger.info("RAG hit: score=%.3f article=%s", result.score, result.article.id)
             await _tts_say(result.answer, turn, t_start)
         else:
             # Phase 2.5: below confidence threshold → Phase 3 handoff
             last_rag_score = 0.0
+            if interception_mode == "shadow":
+                logger.info("[SHADOW] fallback (no RAG match)")
+                tts_active = False
+                return
             fallback_gender = gender if gender in ("male", "female") else "unknown"
             fallback_msg = script.get("ragFallbackMessage", rag_store.fallback_text(fallback_gender))
             await _tts_say(fallback_msg, turn, t_start)
@@ -431,17 +461,21 @@ async def call_ws(ws: WebSocket, script_id: str = "") -> None:
             from rag import store as rag_store  # noqa: PLC0415
             from rag.embedder import embed_query  # noqa: PLC0415
 
-            loop = asyncio.get_running_loop()
-            query_emb = await loop.run_in_executor(None, embed_query, utterance)
             gender = state.slots.get("gender", "unknown") if state else "unknown"  # type: ignore[union-attr]
             linked_tags: list[str] = script.get("linkedKbTags", [])
-            result = rag_store.search(
-                query_emb,
-                gender=gender,  # type: ignore[arg-type]
-                linked_kb_tags=linked_tags or None,
-                max_threshold=_settings.rag_confidence_default,
-                campaign_id=campaign_id,
-            )
+
+            result = await rag_store.cache_lookup(utterance, campaign_id or "", gender)  # type: ignore[arg-type]
+            if result is None:
+                loop = asyncio.get_running_loop()
+                query_emb = await loop.run_in_executor(None, embed_query, utterance)
+                result = await rag_store.search(
+                    query_emb,
+                    gender=gender,  # type: ignore[arg-type]
+                    linked_kb_tags=linked_tags or None,
+                    max_threshold=_settings.rag_confidence_default,
+                    campaign_id=campaign_id,
+                    query_text=utterance,
+                )
         except Exception as exc:
             logger.warning("FSM RAG intercept error: %s", exc)
             return False
@@ -450,6 +484,19 @@ async def call_ws(ws: WebSocket, script_id: str = "") -> None:
             return False
 
         last_rag_score = result.score
+
+        if interception_mode == "shadow":
+            logger.info("[SHADOW] FSM would-say: %.80s (score=%.3f)", result.answer, result.score)
+            return True  # consumed the turn, no audio
+
+        if interception_mode == "medium" and interception_domains:
+            article_tags = set(result.article.tags or [])
+            if result.article.category:
+                article_tags.add(result.article.category)
+            if not article_tags & set(interception_domains):
+                logger.info("[MEDIUM] FSM domain mismatch — silent")
+                return False  # not handled, let FSM continue
+
         logger.info("FSM RAG intercept: score=%.3f article=%s", result.score, result.article.id)
         await _tts_say(result.answer, cur_turn, t_start)
         return True
@@ -647,6 +694,8 @@ async def call_ws(ws: WebSocket, script_id: str = "") -> None:
                 steps = _index_steps(script)
                 state = create_session(script)
                 started_at = time.time()
+                interception_mode: str = raw.get("interception_mode", "full")
+                interception_domains: list[str] = raw.get("interception_domains", [])
 
                 # Phase 1: Start AudioPipeline background task
                 try:

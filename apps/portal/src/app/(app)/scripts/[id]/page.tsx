@@ -9,6 +9,7 @@ import { VersionActions } from './VersionActions'
 import { CampaignToggle } from './CampaignToggle'
 import { DeleteCampaignButton } from './DeleteCampaignButton'
 import ScriptResourcePanel from './ScriptResourcePanel'
+import { InterceptionModeSelector } from './InterceptionModeSelector'
 
 interface RelatedData {
   kbArticles: KnowledgeArticle[]
@@ -92,6 +93,18 @@ export default async function CampaignDetailPage({
             Tạo Version
           </Link>
         </div>
+      </div>
+
+      {/* Interception mode */}
+      <div className="rounded-xl border border-[var(--color-border)] p-4 mb-6">
+        <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wide mb-3">
+          Chế độ can thiệp
+        </p>
+        <InterceptionModeSelector
+          campaignId={id}
+          initialMode={campaign.interceptionMode ?? 'shadow'}
+          initialDomains={campaign.interceptionDomains ?? []}
+        />
       </div>
 
       {/* Stats row */}

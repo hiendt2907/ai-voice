@@ -28,6 +28,12 @@ export class Campaign {
   @Column({ type: 'uuid', nullable: true })
   publishedVersionId: string | null
 
+  @Column({ type: 'enum', enum: ['shadow', 'medium', 'full'], default: 'shadow' })
+  interceptionMode: 'shadow' | 'medium' | 'full'
+
+  @Column({ type: 'simple-array', default: '' })
+  interceptionDomains: string[]
+
   @OneToMany('ScriptVersion', 'campaign')
   versions: ScriptVersion[]
 

@@ -6,6 +6,8 @@ export interface Campaign {
   direction: 'inbound' | 'outbound'
   voiceProfile: string
   isActive: boolean
+  interceptionMode: 'shadow' | 'medium' | 'full'
+  interceptionDomains: string[]
   versions?: ScriptVersion[]
   createdAt: string
   updatedAt: string

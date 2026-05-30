@@ -74,7 +74,9 @@ async def run():
             "script_version_id": "1.0.0",
             "caller_number": "0900000000",
             "direction": "inbound",
-            "use_real_tts": True,
+            "use_real_tts": False,
+            "interception_mode": "full",
+            "interception_domains": [],
             "script": SCRIPT,
         }
         await ws.send(json.dumps(start_msg))

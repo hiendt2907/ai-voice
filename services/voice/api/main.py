@@ -115,10 +115,13 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     app.state.stt = _build_stt(system_config, redis=app.state.redis)
     app.state.llm_client = _build_llm_client()
 
+    # Inject Redis into RAG store (must happen before reload)
+    from rag import store as rag_store  # noqa: PLC0415
+    rag_store.init(app.state.redis)
+
     # Load KB into RAG store (non-fatal — store starts empty if API unreachable)
     try:
-        from rag.store import reload_from_api  # noqa: PLC0415
-        count = await reload_from_api(settings.api_url)
+        count = await rag_store.reload_from_api(settings.api_url)
         logger.info("RAG store loaded: %d articles", count)
     except Exception as exc:
         logger.warning("RAG store not loaded: %s", exc)

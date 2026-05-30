@@ -1,4 +1,8 @@
-"""Tests for RAG in-memory store — cosine search and gender resolution."""
+"""Tests for RAG store — cosine search and gender resolution.
+
+search() is async; tests use asyncio_mode=auto (configured in pyproject.toml).
+The in-memory fallback path (redis=None) is tested here — no Redis required.
+"""
 
 from __future__ import annotations
 
@@ -21,10 +25,14 @@ import rag.store as store_module
 
 @pytest.fixture(autouse=True)
 def clear_store():
-    """Reset in-memory store before each test."""
+    """Reset in-memory store before each test, ensure redis=None (fallback mode)."""
     store_module._store.clear()
+    store_module._article_map.clear()
+    store_module._redis = None
     yield
     store_module._store.clear()
+    store_module._article_map.clear()
+    store_module._redis = None
 
 
 def _article(
@@ -59,54 +67,50 @@ def _unit_vec(dim: int = 4, pos: int = 0) -> list[float]:
 
 # ── search ────────────────────────────────────────────────────────────────────
 
-def test_search_returns_none_when_store_empty():
-    result = search(_unit_vec(pos=0))
+async def test_search_returns_none_when_store_empty():
+    result = await search(_unit_vec(pos=0))
     assert result is None
 
 
-def test_search_returns_none_when_no_embeddings():
+async def test_search_returns_none_when_no_embeddings():
     store_module._store.append(_article(embedding=None))
-    result = search(_unit_vec(pos=0))
+    result = await search(_unit_vec(pos=0))
     assert result is None
 
 
-def test_search_returns_match_above_threshold():
+async def test_search_returns_match_above_threshold():
     vec = _unit_vec(pos=0)
     store_module._store.append(_article(embedding=vec, threshold=0.8))
-    result = search(vec, gender="male", max_threshold=0.8)
+    result = await search(vec, gender="male", max_threshold=0.8)
     assert result is not None
     assert result.score > 0.99
     assert result.answer == "Đây là câu trả lời, anh."
 
 
-def test_search_returns_none_below_threshold():
+async def test_search_returns_none_below_threshold():
     query = _unit_vec(4, pos=0)
     different = _unit_vec(4, pos=1)
     store_module._store.append(_article(embedding=different, threshold=0.82))
-    result = search(query, max_threshold=0.82)
+    result = await search(query, max_threshold=0.82)
     assert result is None
 
 
-def test_search_max_threshold_overrides_article_threshold():
-    """max_threshold caps per-article threshold — calibrates model at runtime."""
+async def test_search_max_threshold_overrides_article_threshold():
     vec = _unit_vec(pos=0)
-    # Article has threshold=0.82, but we pass max_threshold=0.65 (config calibration)
     store_module._store.append(_article(embedding=vec, threshold=0.82))
-    # With max_threshold=0.65, effective = min(0.82, 0.65) = 0.65, score=1.0 → match
-    result = search(vec, max_threshold=0.65)
+    result = await search(vec, max_threshold=0.65)
     assert result is not None
-    # With max_threshold=0.82 (default), score=1.0 still matches
-    result2 = search(vec, max_threshold=0.82)
+    result2 = await search(vec, max_threshold=0.82)
     assert result2 is not None
 
 
-def test_search_picks_best_of_multiple():
+async def test_search_picks_best_of_multiple():
     close = [0.99, 0.01, 0.0, 0.0]
     far = [0.0, 0.0, 1.0, 0.0]
     store_module._store.append(_article(id="a1", embedding=close, threshold=0.8))
     store_module._store.append(_article(id="a2", embedding=far, threshold=0.8))
     query = _unit_vec(4, pos=0)
-    result = search(query)
+    result = await search(query)
     assert result is not None
     assert result.article.id == "a1"
 
@@ -137,192 +141,39 @@ def test_resolve_answer_falls_back_to_default_when_override_missing():
 # ── fallback_text ─────────────────────────────────────────────────────────────
 
 def test_fallback_text_female():
-    txt = fallback_text("female")
-    assert "chị" in txt
+    assert "chị" in fallback_text("female")
 
 
 def test_fallback_text_male():
-    txt = fallback_text("male")
-    assert "anh" in txt
+    assert "anh" in fallback_text("male")
 
 
 def test_fallback_text_unknown_defaults_to_male():
-    txt = fallback_text("unknown")
-    assert "anh" in txt
+    assert "anh" in fallback_text("unknown")
 
 
 # ── upsert_embedding ─────────────────────────────────────────────────────────
 
 def test_upsert_updates_existing_article():
-    store_module._store.append(_article(id="x", embedding=None))
+    art = _article(id="x", embedding=None)
+    store_module._store.append(art)
+    store_module._article_map["x"] = art
     new_vec = [0.1, 0.2, 0.3]
     upsert_embedding("x", new_vec)
     assert store_module._store[0].embedding == new_vec
 
 
 def test_upsert_noop_for_unknown_id():
-    store_module._store.append(_article(id="known", embedding=[1.0]))
+    art = _article(id="known", embedding=[1.0])
+    store_module._store.append(art)
+    store_module._article_map["known"] = art
     upsert_embedding("unknown", [0.5])
     assert store_module._store[0].embedding == [1.0]
 
 
 # ── reload_from_api ───────────────────────────────────────────────────────────
 
-# ── linkedKbTags filter (Phase 2.8) ──────────────────────────────────────────
-
-def test_search_tag_filter_matches_overlap():
-    """Articles with matching tags pass the filter."""
-    vec = _unit_vec(pos=0)
-    store_module._store.append(_article(embedding=vec, threshold=0.8, tags=["booking", "pricing"]))
-    result = search(vec, linked_kb_tags=["pricing"])
-    assert result is not None
-
-
-def test_search_tag_filter_excludes_no_overlap():
-    """Articles with no overlapping tags are excluded."""
-    vec = _unit_vec(pos=0)
-    store_module._store.append(_article(embedding=vec, threshold=0.8, tags=["booking"]))
-    result = search(vec, linked_kb_tags=["lab_results"])
-    assert result is None
-
-
-def test_search_tag_filter_empty_filter_matches_all():
-    """Empty linked_kb_tags means no filter — all articles eligible."""
-    vec = _unit_vec(pos=0)
-    store_module._store.append(_article(embedding=vec, threshold=0.8, tags=["booking"]))
-    result = search(vec, linked_kb_tags=[])
-    assert result is not None
-
-
-def test_search_tag_filter_none_matches_all():
-    """linked_kb_tags=None means no filter."""
-    vec = _unit_vec(pos=0)
-    store_module._store.append(_article(embedding=vec, threshold=0.8, tags=["anything"]))
-    result = search(vec, linked_kb_tags=None)
-    assert result is not None
-
-
-def test_search_tag_filter_prefers_tagged_over_untagged():
-    """With tag filter, articles with no matching tags are excluded even if score is high."""
-    vec = _unit_vec(4, pos=0)
-    store_module._store.append(_article(id="tagged", embedding=vec, threshold=0.8, tags=["booking"]))
-    store_module._store.append(_article(id="untagged", embedding=vec, threshold=0.8, tags=["other"]))
-    result = search(vec, linked_kb_tags=["booking"])
-    assert result is not None
-    assert result.article.id == "tagged"
-
-
-# ── category name matching (Phase 2.8 extended) ───────────────────────────────
-
-def test_search_matches_article_by_category_name():
-    """linked_kb_tags containing a category name matches articles with that category."""
-    vec = _unit_vec(pos=0)
-    article = Article(
-        id="a1", title="T", answer_text="A",
-        answer_male=None, answer_female=None,
-        confidence_threshold=0.8, embedding=vec,
-        category="booking", tags=["some_other_tag"],
-    )
-    store_module._store.append(article)
-    # Search with the category name — should match even though "booking" is not in tags
-    result = search(vec, linked_kb_tags=["booking"])
-    assert result is not None
-    assert result.article.id == "a1"
-
-
-def test_search_excludes_article_when_category_not_in_filter():
-    """Article whose category is not in linked_kb_tags and tags don't match → excluded."""
-    vec = _unit_vec(pos=0)
-    article = Article(
-        id="a1", title="T", answer_text="A",
-        answer_male=None, answer_female=None,
-        confidence_threshold=0.8, embedding=vec,
-        category="schedule", tags=["lịch"],
-    )
-    store_module._store.append(article)
-    result = search(vec, linked_kb_tags=["booking"])
-    assert result is None
-
-
-def test_search_category_and_tag_filter_union():
-    """linked_kb_tags can contain both category names and specific tags."""
-    vec = _unit_vec(pos=0)
-    # Article in "schedule" category
-    store_module._store.append(Article(
-        id="sched", title="T", answer_text="A",
-        answer_male=None, answer_female=None,
-        confidence_threshold=0.8, embedding=vec,
-        category="schedule", tags=["lịch"],
-    ))
-    # Article in "pricing" category with matching tag
-    store_module._store.append(Article(
-        id="price", title="T", answer_text="A",
-        answer_male=None, answer_female=None,
-        confidence_threshold=0.8, embedding=[0.0, 1.0, 0.0, 0.0],
-        category="pricing", tags=["giá"],
-    ))
-    # Filter: include "schedule" category and "giá" tag
-    result_sched = search(vec, linked_kb_tags=["schedule", "giá"])
-    assert result_sched is not None
-    assert result_sched.article.id == "sched"
-
-
-# ── campaign_id scoping (Part A) ──────────────────────────────────────────────
-
-CAMP_A = "aaaa-aaaa-aaaa-aaaa"
-CAMP_B = "bbbb-bbbb-bbbb-bbbb"
-
-
-def test_search_campaign_id_excludes_other_campaign():
-    """Article from campaign B must not appear in a campaign A search."""
-    vec = _unit_vec(pos=0)
-    store_module._store.append(_article(id="b_art", embedding=vec, threshold=0.8, campaign_id=CAMP_B))
-    result = search(vec, max_threshold=0.8, campaign_id=CAMP_A)
-    assert result is None, "Campaign B article must not be returned for campaign A"
-
-
-def test_search_campaign_id_includes_own_campaign():
-    """Article from campaign A is returned when searching with campaign A."""
-    vec = _unit_vec(pos=0)
-    store_module._store.append(_article(id="a_art", embedding=vec, threshold=0.8, campaign_id=CAMP_A))
-    result = search(vec, max_threshold=0.8, campaign_id=CAMP_A)
-    assert result is not None
-    assert result.article.id == "a_art"
-
-
-def test_search_campaign_id_includes_global_articles():
-    """Global articles (campaign_id=None) are returned for any campaign search."""
-    vec = _unit_vec(pos=0)
-    store_module._store.append(_article(id="global_art", embedding=vec, threshold=0.8, campaign_id=None))
-    result = search(vec, max_threshold=0.8, campaign_id=CAMP_A)
-    assert result is not None
-    assert result.article.id == "global_art"
-
-
-def test_search_no_campaign_filter_returns_all():
-    """When campaign_id=None (no filter), articles from all campaigns are returned."""
-    vec = _unit_vec(pos=0)
-    store_module._store.append(_article(id="a_art", embedding=vec, threshold=0.8, campaign_id=CAMP_A))
-    store_module._store.append(_article(id="b_art", embedding=vec, threshold=0.8, campaign_id=CAMP_B))
-    # No campaign filter — returns the best score (first one inserted wins tie)
-    result = search(vec, max_threshold=0.8, campaign_id=None)
-    assert result is not None
-
-
-def test_search_prefers_campaign_article_over_global_when_both_match():
-    """Both campaign-specific and global articles are candidates; best score wins."""
-    vec = _unit_vec(pos=0)
-    store_module._store.append(_article(id="global_art", embedding=vec, threshold=0.8, campaign_id=None))
-    store_module._store.append(_article(id="a_art", embedding=vec, threshold=0.8, campaign_id=CAMP_A))
-    result = search(vec, max_threshold=0.8, campaign_id=CAMP_A)
-    # Both match; result is not None is the key assertion (ordering between equal scores is undefined)
-    assert result is not None
-
-
-@pytest.mark.asyncio
 async def test_reload_from_api_parses_articles():
-    import rag.store as store_mod  # noqa: PLC0415
-
     raw = [
         {
             "id": "id1",
@@ -347,11 +198,143 @@ async def test_reload_from_api_parses_articles():
     mock_client.get = AsyncMock(return_value=mock_resp)
 
     with patch("rag.store.httpx.AsyncClient", return_value=mock_client):
-        count = await store_mod.reload_from_api("http://api")
+        count = await store_module.reload_from_api("http://api")
 
     assert count == 1
-    assert store_mod._store[0].id == "id1"
-    assert store_mod._store[0].embedding == [0.1, 0.2]
-    assert store_mod._store[0].confidence_threshold == 0.85
-    assert store_mod._store[0].tags == ["schedule", "booking"]
-    assert store_mod._store[0].campaign_id == "camp-uuid-1234"
+    assert store_module._store[0].id == "id1"
+    assert store_module._store[0].embedding == [0.1, 0.2]
+    assert store_module._store[0].confidence_threshold == 0.85
+    assert store_module._store[0].tags == ["schedule", "booking"]
+    assert store_module._store[0].campaign_id == "camp-uuid-1234"
+
+
+# ── linkedKbTags filter ───────────────────────────────────────────────────────
+
+async def test_search_tag_filter_matches_overlap():
+    vec = _unit_vec(pos=0)
+    store_module._store.append(_article(embedding=vec, threshold=0.8, tags=["booking", "pricing"]))
+    result = await search(vec, linked_kb_tags=["pricing"])
+    assert result is not None
+
+
+async def test_search_tag_filter_excludes_no_overlap():
+    vec = _unit_vec(pos=0)
+    store_module._store.append(_article(embedding=vec, threshold=0.8, tags=["booking"]))
+    result = await search(vec, linked_kb_tags=["lab_results"])
+    assert result is None
+
+
+async def test_search_tag_filter_empty_filter_matches_all():
+    vec = _unit_vec(pos=0)
+    store_module._store.append(_article(embedding=vec, threshold=0.8, tags=["booking"]))
+    result = await search(vec, linked_kb_tags=[])
+    assert result is not None
+
+
+async def test_search_tag_filter_none_matches_all():
+    vec = _unit_vec(pos=0)
+    store_module._store.append(_article(embedding=vec, threshold=0.8, tags=["anything"]))
+    result = await search(vec, linked_kb_tags=None)
+    assert result is not None
+
+
+async def test_search_tag_filter_prefers_tagged_over_untagged():
+    vec = _unit_vec(4, pos=0)
+    store_module._store.append(_article(id="tagged", embedding=vec, threshold=0.8, tags=["booking"]))
+    store_module._store.append(_article(id="untagged", embedding=vec, threshold=0.8, tags=["other"]))
+    result = await search(vec, linked_kb_tags=["booking"])
+    assert result is not None
+    assert result.article.id == "tagged"
+
+
+# ── category matching ─────────────────────────────────────────────────────────
+
+async def test_search_matches_article_by_category_name():
+    vec = _unit_vec(pos=0)
+    article = Article(
+        id="a1", title="T", answer_text="A",
+        answer_male=None, answer_female=None,
+        confidence_threshold=0.8, embedding=vec,
+        category="booking", tags=["some_other_tag"],
+    )
+    store_module._store.append(article)
+    result = await search(vec, linked_kb_tags=["booking"])
+    assert result is not None
+    assert result.article.id == "a1"
+
+
+async def test_search_excludes_article_when_category_not_in_filter():
+    vec = _unit_vec(pos=0)
+    article = Article(
+        id="a1", title="T", answer_text="A",
+        answer_male=None, answer_female=None,
+        confidence_threshold=0.8, embedding=vec,
+        category="schedule", tags=["lịch"],
+    )
+    store_module._store.append(article)
+    result = await search(vec, linked_kb_tags=["booking"])
+    assert result is None
+
+
+async def test_search_category_and_tag_filter_union():
+    vec = _unit_vec(pos=0)
+    store_module._store.append(Article(
+        id="sched", title="T", answer_text="A",
+        answer_male=None, answer_female=None,
+        confidence_threshold=0.8, embedding=vec,
+        category="schedule", tags=["lịch"],
+    ))
+    store_module._store.append(Article(
+        id="price", title="T", answer_text="A",
+        answer_male=None, answer_female=None,
+        confidence_threshold=0.8, embedding=[0.0, 1.0, 0.0, 0.0],
+        category="pricing", tags=["giá"],
+    ))
+    result_sched = await search(vec, linked_kb_tags=["schedule", "giá"])
+    assert result_sched is not None
+    assert result_sched.article.id == "sched"
+
+
+# ── campaign_id scoping ───────────────────────────────────────────────────────
+
+CAMP_A = "aaaa-aaaa-aaaa-aaaa"
+CAMP_B = "bbbb-bbbb-bbbb-bbbb"
+
+
+async def test_search_campaign_id_excludes_other_campaign():
+    vec = _unit_vec(pos=0)
+    store_module._store.append(_article(id="b_art", embedding=vec, threshold=0.8, campaign_id=CAMP_B))
+    result = await search(vec, max_threshold=0.8, campaign_id=CAMP_A)
+    assert result is None
+
+
+async def test_search_campaign_id_includes_own_campaign():
+    vec = _unit_vec(pos=0)
+    store_module._store.append(_article(id="a_art", embedding=vec, threshold=0.8, campaign_id=CAMP_A))
+    result = await search(vec, max_threshold=0.8, campaign_id=CAMP_A)
+    assert result is not None
+    assert result.article.id == "a_art"
+
+
+async def test_search_campaign_id_includes_global_articles():
+    vec = _unit_vec(pos=0)
+    store_module._store.append(_article(id="global_art", embedding=vec, threshold=0.8, campaign_id=None))
+    result = await search(vec, max_threshold=0.8, campaign_id=CAMP_A)
+    assert result is not None
+    assert result.article.id == "global_art"
+
+
+async def test_search_no_campaign_filter_returns_all():
+    vec = _unit_vec(pos=0)
+    store_module._store.append(_article(id="a_art", embedding=vec, threshold=0.8, campaign_id=CAMP_A))
+    store_module._store.append(_article(id="b_art", embedding=vec, threshold=0.8, campaign_id=CAMP_B))
+    result = await search(vec, max_threshold=0.8, campaign_id=None)
+    assert result is not None
+
+
+async def test_search_prefers_campaign_article_over_global_when_both_match():
+    vec = _unit_vec(pos=0)
+    store_module._store.append(_article(id="global_art", embedding=vec, threshold=0.8, campaign_id=None))
+    store_module._store.append(_article(id="a_art", embedding=vec, threshold=0.8, campaign_id=CAMP_A))
+    result = await search(vec, max_threshold=0.8, campaign_id=CAMP_A)
+    assert result is not None

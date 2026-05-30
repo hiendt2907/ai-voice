@@ -104,13 +104,13 @@ async def embed_article(req: EmbedRequest) -> EmbedResponse:
 
 
 @router.post("/search", response_model=SearchResponse)
-def rag_search(req: SearchRequest) -> SearchResponse:
+async def rag_search(req: SearchRequest) -> SearchResponse:
     """Semantic search against KB. Returns matched answer or fallback message."""
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="query must not be empty")
 
     query_vec = embed_query(req.query)
-    result = search(query_vec, gender=req.gender, max_threshold=settings.rag_confidence_default)
+    result = await search(query_vec, gender=req.gender, max_threshold=settings.rag_confidence_default)
 
     if result is None:
         return SearchResponse(
@@ -141,7 +141,7 @@ def detect_gender_endpoint(req: GenderRequest) -> GenderResponse:
 
 
 @router.post("/test-search", response_model=list[TestSearchResult])
-def rag_test_search(req: TestSearchRequest) -> list[TestSearchResult]:
+async def rag_test_search(req: TestSearchRequest) -> list[TestSearchResult]:
     """Return top-K KB articles for a query (no threshold filter). Used by Portal KB test UI."""
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="query must not be empty")
