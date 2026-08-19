@@ -16,7 +16,7 @@ spec:
       containers:
         - name: minio
           image: minio/minio:latest
-          command: ["server", "/data", "--console-address", ":9001"]
+          args: ["server", "/data", "--console-address", ":9001"]
           env:
             - name: MINIO_ROOT_USER
               valueFrom:

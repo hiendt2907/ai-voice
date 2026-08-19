@@ -6,12 +6,14 @@ namespace: ai-voice
 resources:
   - namespace.yaml
   - config/configmap.yaml
-  - config/secrets.yaml
+  - config/externalsecret.yaml
+  - config/redirect-middleware.yaml
   - data/postgres-statefulset.yaml
   - data/redis-deployment.yaml
   - data/minio-deployment.yaml
   - api/deployment.yaml
   - api/service.yaml
+  - api/ingress.yaml
   - portal/deployment.yaml
   - portal/service.yaml
   - portal/ingress.yaml

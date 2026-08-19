@@ -101,6 +101,46 @@ uv run pytest
 uv run uvicorn app.main:app --reload
 ```
 
+## Test thực tế 1 cuộc gọi (bắt buộc trước khi báo cáo phase)
+
+Test coverage bằng pytest (mock-based) KHÔNG đủ để coi một phase là "xong" — bắt buộc phải chạy
+thử một cuộc gọi thật qua `simulator/run_sim.py` đấu thẳng vào voice worker đang chạy, trước khi
+báo cáo hoàn thành bất kỳ phase/sprint nào liên quan đến `services/voice/`. Đây là bài test mặc
+định, không phải tùy chọn.
+
+```bash
+cd services/voice
+
+# 1. Đảm bảo inference server (STT/TTS thật) đang chạy trên Macbook, port 8100
+curl -s http://127.0.0.1:8100/health   # phải trả {"status":"ok"}
+
+# 2. Chạy voice worker local, trỏ về inference server thật (không mock)
+uv run uvicorn api.main:app --reload --port 8000
+
+# 3. Ở terminal khác, chạy simulator với một kịch bản thật + chuỗi câu thoại thật
+uv run python -m simulator.run_sim \
+    --script booking_inbound_v1 \
+    --utterances "tôi muốn đặt lịch" "khám nội khoa" "Nguyễn Văn A" "ngày mai" "buổi sáng" "đúng"
+
+# Kịch bản phụ nên chạy thêm khi đổi code liên quan đến NLU/handoff:
+uv run python -m simulator.run_sim \
+    --script booking_inbound_v1 \
+    --utterances "cho tôi nói chuyện với nhân viên"
+```
+
+Tiêu chí đạt (đọc trực tiếp từ output simulator):
+- Cuộc gọi đi hết turn mà KHÔNG timeout/crash, kết thúc bằng terminal event đúng (booking xong /
+  handoff / reprompt tùy kịch bản) — không rơi vào fallback "xin lỗi, hệ thống gặp sự cố" ngoài ý muốn.
+- TTFA (Time-To-First-Audio) hiển thị trong output không vượt ngưỡng `--ttfa-warn` (mặc định 500ms,
+  target thật là <400ms theo mục Blocker/Rủi ro bên dưới) — giá trị in màu đỏ nghĩa là fail.
+- Transcript STT khớp nghĩa với câu thoại đã gửi vào (không lệch nghiêm trọng do model STT).
+- Nếu thay đổi động chạm `call/`, `stt/`, `tts/`, hoặc `runtime/`: chạy thêm
+  `uv run pytest tests/test_golden_transcripts.py` để xác nhận không có regression so với 5 baseline
+  đã capture (`tests/golden/*.json`).
+
+Chỉ sau khi cả 2 lớp test (pytest suite đầy đủ + ít nhất 1 cuộc gọi simulator thật như trên) đều
+pass mới được coi phase đó là hoàn thành và báo cáo lại cho user.
+
 ## Sprint roadmap
 
 | Sprint | Deliverable |

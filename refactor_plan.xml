@@ -1,0 +1,596 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<refactor_plan version="1.0" created="2026-05-31" project="ai-voice">
+
+  <goal>
+    Nâng hệ thống từ IVR+RAG template-based lên AI call agent 2 chiều thật sự:
+    LLM generation có cá tính, streaming vừa nghĩ vừa nói, cảm xúc-aware TTS,
+    TTS fallback chain không bị tạch khi ElevenLabs hết quota.
+    Mọi config qua Portal → DB → audit log → Redis invalidate → voice worker pick up ngay.
+  </goal>
+
+  <config_flow>
+    Admin sửa Portal
+    → PUT /settings/conversation (NestJS)
+    → 1. read before từ DB
+    → 2. upsert row mới
+    → 3. audit.log(before, after)
+    → 4. Redis DEL config:system
+    → Session mới: RemoteConfig.load() miss cache → GET /internal/system-settings fresh
+    → build TTSChain + ConversationEngine với config mới
+    Active sessions: chạy hết với config cũ (acceptable, không cần force-reload)
+  </config_flow>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       LAYER 1 — DATABASE (TypeORM migrations)
+       ═══════════════════════════════════════════════════════════════ -->
+  <layer id="db">
+
+    <new_table name="conversation_settings">
+      <col name="id" type="varchar" pk="true" default="'default'"/>
+      <col name="enabled" type="boolean" default="false" note="master switch cho LLM generation"/>
+      <col name="ollamaModel" type="varchar" default="'qwen2.5:3b'" note="tách biệt khỏi NLU model"/>
+      <col name="systemPrompt" type="text" default="''" note="persona prompt, không truncate"/>
+      <col name="maxHistoryTurns" type="int" default="5"/>
+      <col name="temperature" type="float" default="0.3"/>
+      <col name="sentimentEnabled" type="boolean" default="false" note="gộp emotion detect vào NLU call"/>
+      <col name="kbGroundingEnabled" type="boolean" default="true" note="KB làm context, không phải direct answer"/>
+      <col name="sentenceSplitMinChars" type="int" default="30"/>
+      <col name="updatedBy" type="varchar" nullable="true"/>
+      <col name="updatedAt" type="timestamp" auto="UpdateDateColumn"/>
+    </new_table>
+
+    <alter_table name="tts_settings">
+      <add_col name="engineFallbackOrder" type="jsonb" default="'[&quot;elevenlabs&quot;,&quot;edge_tts&quot;,&quot;local&quot;]'" note="thứ tự thử engine"/>
+      <add_col name="elevenlabsDailyCharQuota" type="int" default="0" note="0=unlimited"/>
+      <add_col name="circuitBreakerFailures" type="int" default="3"/>
+      <add_col name="circuitBreakerResetSecs" type="int" default="300"/>
+    </alter_table>
+
+    <note>audit_events không thay đổi schema, chỉ sửa controllers để log before+after</note>
+
+  </layer>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       LAYER 2 — NESTJS API
+       ═══════════════════════════════════════════════════════════════ -->
+  <layer id="nestjs">
+
+    <new_file path="apps/api/src/settings/conversation-settings.entity.ts">
+      Entity ConversationSettings map tới bảng conversation_settings ở trên.
+    </new_file>
+
+    <new_file path="apps/api/src/settings/dto/upsert-conversation.dto.ts">
+      class UpsertConversationDto:
+        enabled: IsBoolean
+        ollamaModel: IsString
+        systemPrompt: IsString, MaxLength(4000)
+        maxHistoryTurns: IsInt, Min(1), Max(20)
+        temperature: IsNumber, Min(0.0), Max(1.0)
+        sentimentEnabled: IsBoolean
+        kbGroundingEnabled: IsBoolean
+        sentenceSplitMinChars: IsInt, Min(10), Max(200)
+    </new_file>
+
+    <modify_file path="apps/api/src/settings/settings.service.ts">
+      <add>
+        inject ConversationSettingsRepository
+        getConversation(): Promise&lt;ConversationSettings&gt;
+        upsertConversation(dto, userId): Promise&lt;ConversationSettings&gt; → save + invalidateVoiceConfigCache()
+      </add>
+      <modify>
+        getAllSettings() → thêm conversation: ConversationSettings vào SystemSettings shape
+        Type SystemSettings thêm field: conversation: ConversationSettings
+      </modify>
+    </modify_file>
+
+    <modify_file path="apps/api/src/settings/settings.controller.ts">
+      <add>
+        GET /settings/conversation → svc.getConversation()
+        PUT /settings/conversation @Roles('admin') → upsert + audit.log(before, after)
+      </add>
+      <modify>
+        TẤT CẢ PUT handlers hiện tại phải:
+        1. const before = await this.svc.getTts() (hoặc getAi(), getNotify(), ...)
+        2. const after = await this.svc.upsertXxx(dto, userId)
+        3. audit.log({ diff: { before: {...}, after: {...} } })
+        Áp dụng cho: cloudfone, ai, stt, tts, notify, voice-worker, doctorcheck, conversation
+      </modify>
+    </modify_file>
+
+    <modify_file path="apps/api/src/settings/settings.module.ts">
+      Thêm ConversationSettings vào TypeOrmModule.forFeature([...])
+      Export ConversationSettings entity
+    </modify_file>
+
+    <modify_file path="apps/api/src/internal/internal.controller.ts">
+      GET /internal/system-settings response thêm conversation field từ getAllSettings()
+    </modify_file>
+
+    <new_endpoint method="GET" path="/settings/tts/health" roles="admin">
+      Proxy tới voice worker GET /ws/tts-health
+      Trả về status per engine + quota usage
+    </new_endpoint>
+
+  </layer>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       LAYER 3 — VOICE WORKER (Python)
+       ═══════════════════════════════════════════════════════════════ -->
+  <layer id="voice_worker">
+
+    <!-- ── FILE MỚI ── -->
+
+    <new_file path="services/voice/tts/params.py">
+      @dataclass(frozen=True)
+      class TTSParams:
+        speaking_rate: float = 1.0    # 0.5–2.0
+        stability: float = 0.5        # ElevenLabs only
+        similarity_boost: float = 0.75
+        style: float = 0.2
+
+      @dataclass(frozen=True)
+      class EmotionState:
+        label: str  # neutral|happy|frustrated|confused|angry
+
+        def to_tts_params(self, engine: str) -> TTSParams:
+          # ElevenLabs: full mapping
+          # edge_tts / local: chỉ speaking_rate
+
+      EMOTION_TTS_MAP = {
+        # label       rate   stability  similarity  style
+        "neutral":   (1.00,  0.50,      0.75,       0.20),
+        "happy":     (1.10,  0.40,      0.75,       0.40),
+        "frustrated":(0.88,  0.78,      0.80,       0.10),
+        "confused":  (0.85,  0.70,      0.75,       0.10),
+        "angry":     (0.75,  0.90,      0.80,       0.05),
+      }
+    </new_file>
+
+    <new_file path="services/voice/tts/chain.py">
+      class CircuitBreaker:
+        threshold: int, reset_secs: int
+        _failures: dict[str, int]
+        _opened_at: dict[str, float]
+        def record_failure(engine_name) → opens circuit after threshold
+        def record_success(engine_name) → closes circuit
+        def is_open(engine_name) → bool (auto half-open after reset_secs)
+
+      class ElevenLabsQuotaTracker:
+        Redis-backed: key "quota:elevenlabs:YYYY-MM-DD" → char count
+        daily_cap: int (0 = unlimited)
+        async count_chars(n: int) → raises QuotaExceededError if over cap
+        async status() → { used, cap, remaining }
+
+      class TTSChain:
+        def __init__(engines: list[BaseTTS], breaker: CircuitBreaker, quota: ElevenLabsQuotaTracker)
+        async synthesize(text, params: TTSParams) → bytes
+          try each engine in fallback_order, skip if circuit open or quota exceeded
+          record_failure / record_success on each attempt
+        async stream_synthesize(text, params) → AsyncGenerator[bytes]
+          same logic, streaming variant
+        def engine_status() → dict[str, str]  # closed|open|half-open per engine
+        def primary_engine_name() → str  # first closed engine
+
+      def build_tts_chain(tts_cfg: TtsConfig, redis) → TTSChain:
+        # Factory: đọc fallback_order từ config, khởi tạo engines tương ứng
+        # Replaces _build_tts() và _build_tts_forced() trong ws.py
+    </new_file>
+
+    <new_file path="services/voice/llm/conversation.py">
+      class ConversationEngine:
+        def __init__(ollama_base_url, model, system_prompt, temperature, max_history_turns)
+
+        async def stream_response(
+          utterance: str,
+          kb_context: str | None,       # KB answer làm grounding fact
+          history: list[tuple[str,str]], # [(user_text, agent_text), ...]
+          emotion: EmotionState,
+        ) → AsyncGenerator[str, None]:  # yield tokens
+          # Build messages:
+          # [system] persona + constraint (không bịa ngoài kb_context)
+          # [system-inject nếu emotion!=neutral] "KH đang {emotion}, hãy nhẹ nhàng/..."
+          # [user/assistant alternating] last N turns từ history
+          # [user] kb_context + utterance
+          # POST ollama /v1/chat/completions stream=True
+          # yield content tokens
+
+        def _build_system(self, emotion: EmotionState) → str:
+          base = self.system_prompt
+          if emotion.label in ("frustrated","angry"):
+            base += "\nKhách đang không hài lòng. Hãy nhẹ nhàng, thông cảm, không vội."
+          elif emotion.label == "confused":
+            base += "\nKhách đang chưa hiểu rõ. Giải thích rõ ràng, ngắn gọn từng bước."
+          return base
+    </new_file>
+
+    <!-- ── FILE SỬA ── -->
+
+    <modify_file path="services/voice/llm/sentence_splitter.py">
+      <change>
+        _MIN_SENTENCE_CHARS: 8 → nhận từ constructor parameter (default 30)
+      </change>
+      <add>
+        Trigger yield rule 2: buffer ends with [,;] + len(buffer) >= min_chars
+        Trigger yield rule 3: buffer ends with ("ạ,"|"nhé,"|"nha,") + len >= min_chars
+        Trigger yield rule 4: len(buffer) >= 100 → yield tại space tiếp theo (no word cut)
+        Priority: rule1 > rule2 > rule3 > rule4
+      </add>
+      <note>
+        Rule 4 quan trọng: câu dài không có dấu câu sẽ force-yield tại word boundary.
+        Không bao giờ yield giữa chữ — always split tại space.
+      </note>
+    </modify_file>
+
+    <modify_file path="services/voice/llm/nlu.py">
+      <modify>
+        LLMMatchResult thêm field: emotion: str = "neutral"
+        _SYSTEM_PROMPT thêm đoạn (chỉ khi sentimentEnabled=True được inject lúc classify):
+          "Thêm field emotion: một trong [neutral,happy,frustrated,confused,angry]"
+        _parse_llm_response: parse thêm emotion field, default "neutral" nếu missing
+        classify_intent nhận thêm param: sentiment_enabled: bool = False
+      </modify>
+    </modify_file>
+
+    <modify_file path="services/voice/api/remote_config.py">
+      <add>
+        @dataclass(frozen=True)
+        class ConversationConfig:
+          enabled: bool
+          ollama_model: str
+          system_prompt: str
+          max_history_turns: int
+          temperature: float
+          sentiment_enabled: bool
+          kb_grounding_enabled: bool
+          sentence_split_min_chars: int
+
+        SystemConfig thêm field: conversation: ConversationConfig
+        _parse() thêm parse conversation từ raw["conversation"]
+        _fallback() thêm ConversationConfig defaults (enabled=False)
+      </add>
+      <modify>
+        TtsConfig thêm fields:
+          fallback_order: list[str]
+          daily_char_quota: int
+          circuit_breaker_failures: int
+          circuit_breaker_reset_secs: int
+        _parse() và _fallback() cập nhật TtsConfig parsing
+      </modify>
+    </modify_file>
+
+    <modify_file path="services/voice/runtime/session.py">
+      <add>
+        SessionState thêm field: emotion_history: tuple[str, ...] = field(default_factory=tuple)
+
+        def with_emotion(self, label: str, max_keep: int = 5) → SessionState:
+          return replace(self, emotion_history=(*self.emotion_history[-(max_keep-1):], label))
+
+        def current_emotion(self) → str:
+          # majority vote trong 3 turns gần nhất, default "neutral"
+          recent = self.emotion_history[-3:]
+          if not recent: return "neutral"
+          return max(set(recent), key=recent.count)
+      </add>
+    </modify_file>
+
+    <modify_file path="services/voice/tts/elevenlabs_tts.py">
+      <modify>
+        synthesize(text, params: TTSParams | None = None) → bytes
+          merge params over instance defaults trước khi gọi API
+
+        stream_synthesize(text, params: TTSParams | None = None) → AsyncGenerator[bytes]
+          same — params override per-call
+
+        _voice_settings(params: TTSParams | None) → VoiceSettings
+          if params: use params.stability, params.similarity_boost, params.style
+          else: use self._stability, etc.
+
+        _stream_sync(text, params) → bytes  (thêm params)
+      </modify>
+    </modify_file>
+
+    <modify_file path="services/voice/tts/edge_tts.py">
+      <modify>
+        synthesize(text, params: TTSParams | None = None) → bytes
+          rate = self.rate (default "+0%")
+          if params:
+            pct = round((params.speaking_rate - 1.0) * 100)
+            rate = f"{'+' if pct >= 0 else ''}{pct}%"
+          pass rate vào Communicate()
+
+        stream_synthesize(text, params: TTSParams | None = None) → AsyncGenerator[bytes]
+          same rate logic
+      </modify>
+    </modify_file>
+
+    <modify_file path="services/voice/tts/fillers.py">
+      <add>
+        Pool mới "calming":
+          "Dạ, em hiểu ạ."
+          "Vâng, bác cứ từ từ ạ."
+          "Dạ không sao ạ."
+
+        Pool mới "deescalate":
+          "Dạ, em rất xin lỗi vì điều này ạ."
+          "Bác thông cảm cho em với ạ."
+          "Em hiểu bác đang không hài lòng, em sẽ cố hỗ trợ ạ."
+
+        Pool mới "clarifying":
+          "Dạ, để em xác nhận lại ạ."
+          "Bác cho em hỏi thêm một chút ạ."
+          "Dạ, ý bác là...?"
+
+        FillerSelector.next_for_emotion(emotion: EmotionState) → str:
+          pool = {
+            "angry": "deescalate",
+            "frustrated": "calming",
+            "confused": "clarifying",
+          }.get(emotion.label, "thinking")
+          return self.next(pool)
+      </add>
+    </modify_file>
+
+    <modify_file path="services/voice/api/routers/ws.py">
+      <delete>
+        _tts = _build_tts()           # module-level singleton
+        _build_tts() function         # replaced by build_tts_chain()
+        _build_tts_forced() function  # replaced by build_tts_chain()
+        _tts_say() function           # replaced by _tts_stream() + direct synthesize
+      </delete>
+
+      <add>
+        Import: from tts.chain import TTSChain, build_tts_chain
+        Import: from tts.params import TTSParams, EmotionState
+        Import: from llm.conversation import ConversationEngine
+
+        async def _tts_stream(
+          sentence_gen: AsyncGenerator[str, None],
+          cur_turn: int,
+          t_start: float,
+          emotion: EmotionState,
+          tts_chain: TTSChain,
+          interrupt: asyncio.Event,
+          min_chars: int,
+        ) → None:
+          splitter = SentenceSplitter(min_chars=min_chars)
+          first = True
+          async for token in sentence_gen:
+            if interrupt.is_set(): break
+            for sentence in splitter.feed(token):
+              if interrupt.is_set(): break
+              params = emotion.to_tts_params(tts_chain.primary_engine_name())
+              beat = BeatPayload(text=sentence, ...)
+              await _send_beat(ws, beat)
+              if tts_chain:
+                async for chunk in tts_chain.stream_synthesize(sentence, params):
+                  if interrupt.is_set(): break
+                  await _send_audio(ws, chunk, cur_turn)
+                  if first:
+                    logger.info("TTFA=%.0fms", (time.perf_counter()-t_start)*1000)
+                    first = False
+          for sentence in splitter.flush():
+            if not interrupt.is_set():
+              params = emotion.to_tts_params(tts_chain.primary_engine_name())
+              audio = await tts_chain.synthesize(sentence, params)
+              await _send_audio(ws, audio, cur_turn)
+
+        GET /ws/tts-health → tts_chain.engine_status() + quota_tracker.status()
+      </add>
+
+      <modify>
+        call_ws() session init:
+          remote_cfg = await RemoteConfig(settings).load()
+          tts_chain = build_tts_chain(remote_cfg.tts, redis_client)
+          conv_engine = ConversationEngine(...) if remote_cfg.conversation.enabled else None
+          splitter_min_chars = remote_cfg.conversation.sentence_split_min_chars
+
+        _rag_turn():
+          THAY: await _tts_say(result.answer, turn, t_start)
+          BẰNG:
+            if conv_engine and remote_cfg.conversation.kb_grounding_enabled:
+              gen = conv_engine.stream_response(
+                utterance=utterance,
+                kb_context=result.answer,
+                history=_get_history(state, remote_cfg.conversation.max_history_turns),
+                emotion=EmotionState(state.current_emotion()),
+              )
+              await _tts_stream(gen, turn, t_start, emotion, tts_chain, tts_interrupt, splitter_min_chars)
+            else:
+              # legacy path: direct template
+              audio = await tts_chain.synthesize(result.answer, TTSParams())
+              await _send_audio(ws, audio, turn)
+
+        process_utterance():
+          Sau NLU result, nếu sentiment_enabled:
+            state = state.with_emotion(nlu_result.emotion)
+          current_emotion = EmotionState(state.current_emotion())
+          filler_text = filler_selector.next_for_emotion(current_emotion)
+
+        _emit_filler():
+          Thêm params = current_emotion.to_tts_params(tts_chain.primary_engine_name())
+          audio = await tts_chain.synthesize(filler_text, params)
+
+        Helper _get_history(state, max_turns) → list[tuple[str,str]]:
+          Lấy last max_turns từ state.transcript, pair (user, agent)
+      </modify>
+    </modify_file>
+
+    <new_endpoint service="voice_worker" method="GET" path="/ws/tts-health">
+      Response: {
+        engines: { elevenlabs: "closed"|"open"|"half-open", edge_tts: ..., local: ... },
+        quota: { used: int, cap: int, remaining: int, date: "YYYY-MM-DD" }
+      }
+    </new_endpoint>
+
+  </layer>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       LAYER 4 — PORTAL (Next.js)
+       ═══════════════════════════════════════════════════════════════ -->
+  <layer id="portal">
+
+    <new_file path="apps/portal/src/app/(app)/settings/ConversationSection.tsx">
+      Fields:
+        ToggleField: enabled "Bật LLM Conversation"
+        TextInput: ollamaModel "Ollama model" (e.g. qwen2.5:3b)
+        Textarea (large): systemPrompt "Persona / System Prompt"
+        SliderField: maxHistoryTurns 1–10 "Số turns lưu context"
+        SliderField: temperature 0.1–1.0
+        ToggleField: sentimentEnabled "Phát hiện cảm xúc khách hàng"
+        ToggleField: kbGroundingEnabled "Dùng KB làm context (không trả lời thẳng)"
+        NumberField: sentenceSplitMinChars 10–200 "Min chars mỗi câu TTS"
+
+      API: GET/PUT /settings/conversation
+      Audit: hiện thị updatedBy, updatedAt
+      Disabled nếu enabled=false: tất cả fields khác mờ đi
+    </new_file>
+
+    <modify_file path="apps/portal/src/app/(app)/settings/TtsSection.tsx">
+      <add>
+        Section "Thứ tự dự phòng":
+          3 SelectField (primary / fallback-1 / fallback-2)
+          Options: elevenlabs | edge_tts | local
+
+        Section "ElevenLabs Quota":
+          NumberField: elevenlabsDailyCharQuota (0=unlimited)
+
+        Section "Circuit Breaker":
+          NumberField: circuitBreakerFailures
+          NumberField: circuitBreakerResetSecs
+
+        Status Panel (poll mỗi 30s từ GET /settings/tts/health):
+          StatusDot per engine (green=closed, yellow=half-open, red=open)
+          Quota bar: used/cap characters hôm nay
+      </add>
+    </modify_file>
+
+    <modify_file path="apps/portal/src/app/(app)/settings/page.tsx">
+      Thêm &lt;ConversationSection /&gt; giữa &lt;AiSection /&gt; và &lt;TtsSection /&gt;
+    </modify_file>
+
+    <modify_file path="apps/portal/src/lib/api/settings.ts">
+      Thêm fetchConversationSettings() và updateConversationSettings()
+    </modify_file>
+
+  </layer>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SPRINT ORDER
+       ═══════════════════════════════════════════════════════════════ -->
+  <sprint_order>
+
+    <sprint id="Q1" name="LLM Conversation Engine">
+      <task>DB migration: tạo conversation_settings, alter tts_settings</task>
+      <task>NestJS: ConversationSettings entity + DTO + service + controller (2 endpoints)</task>
+      <task>NestJS: sửa tất cả PUT handlers log before+after</task>
+      <task>NestJS: getAllSettings() + internal endpoint thêm conversation</task>
+      <task>Voice: llm/conversation.py — ConversationEngine streaming</task>
+      <task>Voice: remote_config.py — thêm ConversationConfig parse</task>
+      <task>Voice: ws.py — _tts_stream() + sửa _rag_turn() dùng conv_engine</task>
+      <task>Portal: ConversationSection.tsx</task>
+      <task>Portal: page.tsx thêm ConversationSection</task>
+    </sprint>
+
+    <sprint id="Q2" name="Sentence Streaming + Splitter">
+      <task>Voice: sentence_splitter.py — min_chars configurable, comma split, force split rule</task>
+      <task>Voice: _tts_stream() dùng SentenceSplitter, stream chunk từng câu</task>
+      <task>Voice: đo và log TTFA per sentence</task>
+      <task>Test: simulator mock mode, kiểm tra không đứt chữ</task>
+    </sprint>
+
+    <sprint id="Q3" name="Emotion System">
+      <task>Voice: tts/params.py — TTSParams, EmotionState, EMOTION_TTS_MAP</task>
+      <task>Voice: llm/nlu.py — thêm emotion field vào NLU response</task>
+      <task>Voice: runtime/session.py — emotion_history, current_emotion()</task>
+      <task>Voice: tts/fillers.py — 3 pools mới + next_for_emotion()</task>
+      <task>Voice: tts/elevenlabs_tts.py — accept TTSParams per-call</task>
+      <task>Voice: tts/edge_tts.py — accept TTSParams per-call (rate only)</task>
+      <task>Voice: ws.py — inject emotion vào _rag_turn + filler selection</task>
+    </sprint>
+
+    <sprint id="Q4" name="TTS Resilience Chain">
+      <task>Voice: tts/chain.py — CircuitBreaker, ElevenLabsQuotaTracker, TTSChain</task>
+      <task>Voice: build_tts_chain() factory, xóa _build_tts() singleton</task>
+      <task>Voice: GET /ws/tts-health endpoint</task>
+      <task>NestJS: GET /settings/tts/health proxy endpoint</task>
+      <task>Portal: TtsSection.tsx — fallback order, quota, circuit breaker, status panel</task>
+    </sprint>
+
+  </sprint_order>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       DELETE LIST
+       ═══════════════════════════════════════════════════════════════ -->
+  <delete_list>
+    <item file="services/voice/api/routers/ws.py" symbol="_tts" reason="replaced by TTSChain per-session"/>
+    <item file="services/voice/api/routers/ws.py" symbol="_build_tts" reason="replaced by build_tts_chain()"/>
+    <item file="services/voice/api/routers/ws.py" symbol="_build_tts_forced" reason="replaced by build_tts_chain()"/>
+    <item file="services/voice/api/routers/ws.py" symbol="_tts_say" reason="replaced by _tts_stream() + direct tts_chain.synthesize()"/>
+  </delete_list>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       KEY DESIGN DECISIONS
+       ═══════════════════════════════════════════════════════════════ -->
+  <decisions>
+    <decision id="llm_model">
+      qwen2.5:3b via Ollama — sweet spot: tiếng Việt tốt, first token ~200ms Mac M-series,
+      tách biệt model NLU (ai_settings.ollamaModel) vs conversation (conversation_settings.ollamaModel)
+    </decision>
+
+    <decision id="emotion_detection">
+      Gộp vào NLU call (Option A): một LLM round-trip, thêm field "emotion" vào JSON output.
+      Nếu parse fail → default "neutral", NLU vẫn hoạt động bình thường.
+      Toggle qua sentimentEnabled trong conversation_settings.
+    </decision>
+
+    <decision id="sentence_split_boundaries">
+      Yield triggers (priority order):
+      1. [.!?…] → always yield
+      2. [,;] + buffer >= min_chars → yield (clause end)
+      3. ends with ("ạ,"|"nhé,"|"nha,") + buffer >= min_chars → yield
+      4. buffer >= 100 chars + next space → force yield (no word cut)
+      Rule 4: LUÔN split tại space, không bao giờ giữa chữ.
+      min_chars configurable qua DB, default 30.
+    </decision>
+
+    <decision id="tts_streaming">
+      Streaming ở cấp độ câu (sentence-level), không phải token.
+      ElevenLabs: stream_synthesize() per sentence → yield PCM chunks realtime.
+      EdgeTTS: synthesize() full sentence → yield as single chunk (batch, acceptable cho fallback).
+      Câu N+1 được queue trong khi câu N đang stream audio.
+    </decision>
+
+    <decision id="active_session_reload">
+      Active sessions không bị reload khi admin đổi config — acceptable.
+      Chỉ session mới pick up config mới (Redis cache invalidated → next RemoteConfig.load()).
+      Nếu cần force reload active sessions: cần Redis pub/sub → ws.py subscribe → out of scope.
+    </decision>
+
+    <decision id="tts_chain_scope">
+      TTSChain build per-session (khi WS connect), không phải module-level singleton.
+      Lý do: config có thể thay đổi giữa các sessions, cần pick up fresh từ remote_config.
+      Circuit breaker state chia sẻ qua Redis (không phải in-memory per-instance).
+    </decision>
+  </decisions>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       EXPECTED TTFA TIMELINE (sau khi hoàn thành)
+       ═══════════════════════════════════════════════════════════════ -->
+  <ttfa_timeline>
+    t=0ms    User nói xong, VAD detect silence
+    t=0ms    Filler TTS bắt đầu (song song) — "Dạ,"
+    t=0ms    NLU+Emotion Ollama call bắt đầu
+    t=200ms  Filler audio gửi đến user (user nghe ngay)
+    t=250ms  NLU result → intent + emotion label
+    t=250ms  KB search bắt đầu (embedding + vector search)
+    t=350ms  KB result (grounding context)
+    t=350ms  ConversationEngine.stream_response() bắt đầu (Ollama streaming)
+    t=550ms  SentenceSplitter yield sentence 1 (buffer đủ)
+    t=550ms  TTSChain.stream_synthesize(sentence1) bắt đầu
+    t=700ms  Audio chunk 1 gửi → USER NGHE CÂU ĐẦU
+    t=700ms  Ollama đang gen sentence 2 tokens
+    t=900ms  Sentence 2 yield → TTSChain
+    t=1100ms Audio chunk 2 → USER NGHE TIẾP TỤC (không ngắt quãng)
+  </ttfa_timeline>
+
+</refactor_plan>

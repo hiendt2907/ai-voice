@@ -12,3 +12,25 @@ data:
   VOICE_PORT: "8000"
   NESTJS_WEBHOOK_URL: "http://api:3001/api/v1/internal/call-events"
   API_INTERNAL_URL: "http://api:3001"
+  NESTJS_URL: "http://api:3001"
+  API_URL: "http://api:3001/api/v1"
+  VOICE_WORKER_BASE_URL: "http://voice:8000"
+  VOICE_WORKER_URL: "http://voice:8000"
+
+  # LLM — always routed to the operator's Macbook Ollama over Tailscale,
+  # never a cloud LLM or a model on the cluster itself.
+  LLM_PROVIDER: "ollama"
+  LLM_BASE_URL: "http://100.93.3.96:11434/v1"
+  LLM_MODEL: "qwen3:8b"
+  USE_LLM_NLU: "true"
+
+  # STT/TTS — routed to the Macbook inference server (Piper + faster-whisper)
+  # over Tailscale, same principle as LLM. No model weights on GCP.
+  STT_ENGINE: "remote"
+  TTS_ENGINE: "remote"
+  USE_REAL_TTS: "true"
+  ELEVENLABS_VOICE_ID: "d5HVupAWCwe4e6GvMCAL"
+  ELEVENLABS_MODEL_ID: "eleven_v3"
+
+  # CloudFone ODS — still pending real schema, mock mode
+  USE_REAL_ODS: "false"

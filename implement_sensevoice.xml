@@ -1,0 +1,485 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plan name="integrate-sensevoice" updated="2026-06-01">
+
+  <summary>
+    Tích hợp SenseVoice vào ai-voice system:
+    1. Thêm SenseVoiceSTT làm engine STT có thể chọn (song song với faster-whisper và ElevenLabs)
+    2. Trích xuất emotion từ giọng khách hàng và đưa vào SessionState để điều chỉnh TTS prosody
+    3. Đổi TTS fallback order: edge-tts → local → ElevenLabs (ElevenLabs là last resort)
+  </summary>
+
+  <gaps>
+    <gap id="G1" severity="high">
+      STTResult không có emotion field.
+      Định nghĩa ở faster_whisper_stt.py, import bởi elevenlabs_stt.py và audio/pipeline.py.
+    </gap>
+    <gap id="G2" severity="high">
+      transcript_queue trong ws.py là Queue[str] — emotion bị mất sau _drain_pipeline.
+      Cần truyền emotion từ STT xuyên qua queue vào process_utterance.
+    </gap>
+    <gap id="G3" severity="high">
+      SttSettings entity và SttConfig không có engine field.
+      STT engine chỉ cấu hình qua env var, không DB-controlled như TTS.
+    </gap>
+    <gap id="G4" severity="medium">
+      TTS fallback order mặc định là ["elevenlabs","edge-tts","local"] ở 3 chỗ.
+      Phải đổi thành ["edge-tts","local","elevenlabs"] đồng thời cả 3.
+    </gap>
+    <gap id="G5" severity="low">
+      Dead code ở ws.py: hasattr(result,"emotion") luôn False vì TurnResult không có field đó.
+      Cần xoá để tránh nhầm lẫn sau khi tích hợp.
+    </gap>
+  </gaps>
+
+  <phases>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <phase id="P1" name="TTS fallback order" depends_on="">
+      <description>
+        Đổi mặc định fallback order: edge-tts → local → ElevenLabs.
+        Làm trước vì độc lập, không ảnh hưởng STT.
+      </description>
+
+      <file action="MODIFY" path="services/voice/tts/chain.py" line="195">
+        <change>
+          TRƯỚC: ["elevenlabs", "edge-tts", "local"]
+          SAU:   ["edge-tts", "local", "elevenlabs"]
+        </change>
+        <note>Default khi tts_cfg.fallback_order là None hoặc rỗng.</note>
+      </file>
+
+      <file action="MODIFY" path="services/voice/api/remote_config.py">
+        <change location="TtsConfig.__post_init__ line 54">
+          TRƯỚC: ["elevenlabs", "edge-tts", "local"]
+          SAU:   ["edge-tts", "local", "elevenlabs"]
+        </change>
+        <change location="_parse() line 135">
+          TRƯỚC: tts_raw.get("engineFallbackOrder") or ["elevenlabs", "edge-tts", "local"]
+          SAU:   tts_raw.get("engineFallbackOrder") or ["edge-tts", "local", "elevenlabs"]
+        </change>
+      </file>
+
+      <file action="MODIFY" path="apps/api/src/settings/tts-settings.entity.ts" line="43">
+        <change>
+          TRƯỚC: default: () => `'["elevenlabs","edge-tts","local"]'`
+          SAU:   default: () => `'["edge-tts","local","elevenlabs"]'`
+        </change>
+        <note>
+          Default cho DB row mới. Rows cũ giữ nguyên giá trị DB — operator
+          phải update thủ công qua Portal nếu muốn áp dụng order mới.
+        </note>
+      </file>
+
+      <warning>
+        Rows đã có trong DB (tts_settings) không tự thay đổi khi deploy.
+        Phải chạy UPDATE hoặc operator lưu lại qua Portal để sync.
+        Lệnh: UPDATE tts_settings SET "engineFallbackOrder" = '["edge-tts","local","elevenlabs"]' WHERE id = 'default';
+      </warning>
+    </phase>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <phase id="P2" name="STTResult + emotion map" depends_on="P1">
+      <description>
+        Mở rộng STTResult để mang emotion, thêm emotion labels mới vào TTS map.
+        Foundation cho toàn bộ phần còn lại.
+      </description>
+
+      <file action="MODIFY" path="services/voice/stt/faster_whisper_stt.py">
+        <change>
+          Thêm field vào STTResult dataclass:
+            emotion: str | None = None
+          Vị trí: sau field language (dòng 24).
+          STTResult là frozen dataclass — field có default phải đặt sau các field không có default.
+          Thứ tự đúng: text (str), confidence (float), is_final (bool), language (str="vi"), emotion (str|None=None)
+        </change>
+        <note>
+          ElevenLabsSTT và FasterWhisperSTT trả STTResult.emotion = None (không thay đổi code chúng).
+          Chỉ SenseVoiceSTT mới populate emotion.
+          AudioPipeline.process() yield STTResult — emotion tự động có mặt trong result.
+        </note>
+      </file>
+
+      <file action="MODIFY" path="services/voice/tts/params.py">
+        <change>
+          Thêm 4 entries vào _EMOTION_TTS_MAP:
+            "sad":       (0.82, 0.80, 0.75, 0.05)  # chậm, ổn định, nhẹ nhàng
+            "fearful":   (0.90, 0.70, 0.75, 0.05)  # hơi chậm, rõ ràng
+            "disgusted": (0.85, 0.75, 0.75, 0.08)
+            "surprised": (1.05, 0.45, 0.75, 0.30)  # nhanh hơn, biểu cảm
+          Mapping: (rate, stability, similarity_boost, style)
+          edge-tts/local chỉ dùng rate, bỏ qua 3 cột còn lại (đã xử lý trong to_tts_params).
+        </change>
+        <note>
+          SenseVoice emotion labels (all caps với tag brackets):
+            HAPPY, SAD, ANGRY, NEUTRAL, FEARFUL, DISGUSTED, SURPRISED
+          SenseVoiceSTT sẽ normalize về lowercase trước khi trả về.
+          Mapping trong _EMOTION_TTS_MAP dùng lowercase.
+        </note>
+      </file>
+    </phase>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <phase id="P3" name="SenseVoiceSTT engine" depends_on="P2">
+      <description>
+        Tạo SenseVoiceSTT — wrapper sync, chạy trong run_in_executor.
+        Phải resample 8kHz → 16kHz vì SenseVoice yêu cầu 16kHz input.
+      </description>
+
+      <file action="CREATE" path="services/voice/stt/sensevoice_stt.py">
+        <spec>
+          Class: SenseVoiceSTT
+          Interface: transcribe_pcm(pcm_bytes: bytes, sample_rate: int = 8000) -> STTResult
+          Constructor args:
+            model_name: str = "iic/SenseVoiceSmall"
+            device: str = "cpu"  # "cuda:0" nếu có GPU
+            ban_emo_unk: bool = True  # bỏ emotion "unk"
+
+          Logic:
+            1. Lazy load: import funasr trong __init__, log warning nếu không có
+            2. Resample PCM int16 từ sample_rate → 16000 Hz dùng scipy.signal.resample_poly
+               (scipy đã có trong deps, nhanh hơn librosa)
+            3. Convert int16 → float32 numpy array (chia 32768.0)
+            4. Gọi model.generate(input=array, language="vi", use_itn=True, ban_emo_unk=True)
+            5. Parse result[0]["text"]:
+               - Regex extract emotion tag: r"<\|([A-Z]+)\|>"
+               - Normalize: "HAPPY" → "happy", "NEUTRAL" → "neutral", etc.
+               - Strip tất cả tags khỏi text: re.sub(r"&lt;.*?&gt;|<\|.*?\|>", "", text).strip()
+            6. Return STTResult(text=clean_text, confidence=0.9, is_final=True,
+                                language="vi", emotion=emotion_label)
+
+          Error handling:
+            - Empty pcm_bytes → return STTResult(text="", confidence=0.0, is_final=True)
+            - funasr not installed → raise ImportError với hướng dẫn: "pip install funasr"
+            - Model generate error → log warning, return STTResult(text="", confidence=0.0, is_final=True)
+
+          Notes:
+            - SenseVoice là sync — AudioPipeline chạy qua run_in_executor (giống FasterWhisperSTT)
+            - Model download lần đầu ~500MB — cần pre-pull trong Docker hoặc mount volume
+            - funasr lazy import trong __init__ để không crash startup nếu engine khác được chọn
+        </spec>
+      </file>
+
+      <file action="MODIFY" path="services/voice/pyproject.toml">
+        <change>
+          Thêm vào dependencies:
+            "funasr>=1.2.0",
+
+          Thêm vào [tool.coverage.run] omit:
+            "*/stt/sensevoice_stt.py",
+
+          WARNING: funasr kéo theo PyTorch (~1.5GB).
+          Cân nhắc tách thành optional group nếu image size là vấn đề:
+            [project.optional-dependencies]
+            sensevoice = ["funasr>=1.2.0"]
+          Và install bằng: uv sync --extra sensevoice
+        </change>
+      </file>
+    </phase>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <phase id="P4" name="Wire emotion qua pipeline → ws" depends_on="P3">
+      <description>
+        Truyền emotion từ STT output xuyên qua transcript_queue vào process_utterance.
+        BREAKING CHANGE nội bộ — phải sửa đồng thời tất cả điểm put/get trong ws.py.
+      </description>
+
+      <file action="MODIFY" path="services/voice/api/routers/ws.py">
+
+        <change id="ws-queue-type" location="line 183">
+          TRƯỚC: transcript_queue: asyncio.Queue[str] = asyncio.Queue()
+          SAU:   transcript_queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
+        </change>
+
+        <change id="ws-drain-pipeline" location="_drain_pipeline inner function">
+          TRƯỚC:
+            if result.text:
+                await transcript_queue.put(result.text)
+                logger.info("STT transcript: %r (conf=%.2f)", result.text, result.confidence)
+          SAU:
+            if result.text:
+                await transcript_queue.put((result.text, result.emotion))
+                logger.info(
+                    "STT transcript: %r (conf=%.2f, emotion=%s)",
+                    result.text, result.confidence, result.emotion,
+                )
+        </change>
+
+        <change id="ws-mock-utterance" location="InboundEvent.UTTERANCE handler">
+          TRƯỚC: await transcript_queue.put(utt.text)
+          SAU:   await transcript_queue.put((utt.text, None))
+          NOTE: Mock mode không có emotion — None là đúng.
+                Nếu bỏ sót chỗ này → ValueError: too many values to unpack khi Simulator test.
+        </change>
+
+        <change id="ws-turn-handler" location="turn_handler function">
+          TRƯỚC: text = await asyncio.wait_for(transcript_queue.get(), timeout=0.5)
+                 t0 = time.perf_counter()
+                 await process_utterance(text, t0)
+          SAU:   text, stt_emotion = await asyncio.wait_for(transcript_queue.get(), timeout=0.5)
+                 t0 = time.perf_counter()
+                 await process_utterance(text, t0, stt_emotion)
+        </change>
+
+        <change id="ws-process-utterance-sig" location="process_utterance signature">
+          TRƯỚC: async def process_utterance(utterance: str, t_start: float) -> None:
+          SAU:   async def process_utterance(utterance: str, t_start: float, stt_emotion: str | None = None) -> None:
+        </change>
+
+        <change id="ws-process-utterance-body" location="process_utterance body — đầu hàm, sau guard state is None">
+          Thêm ngay sau "if state is None: return":
+            # Inject STT emotion vào SessionState trước khi xử lý turn
+            if stt_emotion is not None and stt_emotion not in ("neutral", "unk"):
+                state = state.with_emotion(stt_emotion)
+
+          Lý do inject TRƯỚC async_process_turn:
+            - Executor và filler selector đọc state.current_emotion() để chọn prosody
+            - Nếu inject sau → emotion chỉ ảnh hưởng turn tiếp theo, không phải turn hiện tại
+        </change>
+
+        <change id="ws-rag-turn-sig" location="_rag_turn signature">
+          TRƯỚC: async def _rag_turn(utterance: str, t_start: float) -> None:
+          SAU:   async def _rag_turn(utterance: str, t_start: float, stt_emotion: str | None = None) -> None:
+          Thêm cùng emotion injection vào đầu _rag_turn (sau nonlocal declarations).
+        </change>
+
+        <change id="ws-process-utterance-rag-call" location="process_utterance — rag_assisted branch">
+          TRƯỚC: await _rag_turn(utterance, t_start)
+          SAU:   await _rag_turn(utterance, t_start, stt_emotion)
+        </change>
+
+        <change id="ws-dead-code" location="process_utterance — FSM path, sau await filler_task">
+          XOÁ đoạn dead code này (hasattr luôn False, không bao giờ chạy):
+            if (
+                remote_cfg.conversation.sentiment_enabled
+                and hasattr(result, "emotion")
+                and result.emotion not in (None, "neutral")
+            ):
+                state = result.state.with_emotion(result.emotion)
+            else:
+                state = result.state
+          ĐỔI THÀNH:
+            state = result.state
+          Lý do: emotion đã inject vào state trước async_process_turn.
+                 result.state kế thừa emotion đó. Không cần inject lại.
+        </change>
+
+      </file>
+    </phase>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <phase id="P5" name="Config DB và remote_config" depends_on="P4">
+      <description>
+        Thêm engine field vào SttSettings DB entity và SttConfig Python dataclass.
+        Sau đó _build_stt() đọc từ DB thay vì chỉ env var.
+      </description>
+
+      <file action="MODIFY" path="apps/api/src/settings/stt-settings.entity.ts">
+        <change>
+          Thêm column trước modelSize:
+            @Column({ default: 'faster_whisper' })
+            engine: string   // "faster_whisper" | "elevenlabs" | "sensevoice"
+        </change>
+      </file>
+
+      <file action="MODIFY" path="apps/api/src/settings/dto/upsert-stt.dto.ts">
+        <change>
+          Thêm field:
+            @IsString()
+            engine: string
+        </change>
+      </file>
+
+      <file action="CREATE" path="apps/api/src/migrations/TIMESTAMP-add-stt-engine.ts">
+        <spec>
+          TypeORM migration:
+            up: ALTER TABLE stt_settings ADD COLUMN engine VARCHAR NOT NULL DEFAULT 'faster_whisper'
+            down: ALTER TABLE stt_settings DROP COLUMN engine
+        </spec>
+      </file>
+
+      <file action="MODIFY" path="services/voice/api/remote_config.py">
+        <change location="SttConfig dataclass">
+          Thêm field đầu tiên:
+            engine: str = "faster_whisper"  # "faster_whisper" | "elevenlabs" | "sensevoice"
+          Python frozen dataclass — field có default phải đặt sau field không có default.
+          Vì tất cả SttConfig fields đều có default (hoặc required), thêm engine ở đầu là an toàn.
+          Thực ra không có field nào là required (không có default) trong SttConfig hiện tại,
+          nên thêm ở đầu hoặc cuối đều được, nhưng nên ở đầu cho rõ.
+        </change>
+        <change location="_parse() stt block">
+          THÊM: engine=stt_raw.get("engine", "faster_whisper"),
+        </change>
+        <change location="_fallback() stt block">
+          THÊM: engine=settings.stt_engine,
+          Giữ env var fallback để backward compatible khi NestJS unreachable.
+        </change>
+      </file>
+
+      <file action="MODIFY" path="services/voice/api/main.py">
+        <change location="_build_stt function">
+          TRƯỚC: engine = settings.stt_engine
+          SAU:   engine = sys_cfg.stt.engine  # DB-controlled, fallback về env var trong _fallback()
+
+          THÊM branch sensevoice trước elevenlabs:
+            if engine == "sensevoice":
+                from stt.sensevoice_stt import SenseVoiceSTT
+                device = sys_cfg.stt.device or settings.stt_device
+                logger.info("STT engine: SenseVoice (device=%s)", device)
+                return SenseVoiceSTT(device=device)
+        </change>
+        <change location="POST /config/reload endpoint">
+          Kiểm tra return dict: cập nhật stt_engine key để phản ánh engine thực tế từ DB,
+          không hardcode logic cũ "elevenlabs if api_key else faster-whisper".
+          SAU: "stt_engine": new_cfg.stt.engine,
+        </change>
+      </file>
+
+      <file action="MODIFY" path="services/voice/api/config.py">
+        <change location="stt_engine comment line 14">
+          TRƯỚC: # STT engine: "elevenlabs" | "faster_whisper"
+          SAU:   # STT engine: "elevenlabs" | "faster_whisper" | "sensevoice"
+          Note: stt_engine env var vẫn là fallback khi NestJS unreachable.
+        </change>
+      </file>
+    </phase>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <phase id="P6" name="Tests" depends_on="P3 P4">
+      <description>
+        Tests mới và update tests hiện có.
+        Target: không giảm coverage (hiện 80%+ theo pyproject.toml).
+      </description>
+
+      <file action="CREATE" path="services/voice/tests/test_sensevoice_stt.py">
+        <spec>
+          Mock funasr.AutoModel để không cần download model trong CI.
+          Tests:
+            test_empty_pcm_returns_empty_result
+              - SenseVoiceSTT.transcribe_pcm(b"") → STTResult(text="", confidence=0.0)
+
+            test_emotion_parsed_from_tag
+              - Mock generate trả "&lt;|HAPPY|&gt;Xin chào ạ"
+              - Expect: STTResult.emotion == "happy", text == "Xin chào ạ"
+
+            test_neutral_emotion_normalized
+              - Mock: "&lt;|NEUTRAL|&gt;Vâng ạ"
+              - Expect: emotion == "neutral"
+
+            test_unknown_emotion_ignored_when_banned
+              - ban_emo_unk=True: "&lt;|UNKNOWN|&gt;text" → emotion == None
+
+            test_resampling_called_for_8khz
+              - Verify scipy.signal.resample_poly được gọi với up=2, down=1 (8000→16000)
+
+            test_funasr_not_installed_raises_import_error
+              - Mock funasr import fail → ImportError với message rõ ràng
+        </spec>
+      </file>
+
+      <file action="MODIFY" path="services/voice/tests/test_stt.py">
+        <change>
+          Thêm cuối file:
+            def test_stt_result_emotion_default_none():
+                result = STTResult(text="hello", confidence=0.9, is_final=True)
+                assert result.emotion is None
+
+            def test_stt_result_emotion_field():
+                result = STTResult(text="hello", confidence=0.9, is_final=True, emotion="happy")
+                assert result.emotion == "happy"
+        </change>
+      </file>
+    </phase>
+
+  </phases>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <workflow_changes>
+    <item id="WC1" severity="breaking">
+      transcript_queue type: Queue[str] → Queue[tuple[str, str | None]]
+      Phải sửa đồng thời 3 điểm: put() trong _drain_pipeline, put() trong UTTERANCE handler,
+      get() trong turn_handler. Nếu sót 1 điểm → crash runtime.
+    </item>
+    <item id="WC2" severity="info">
+      Emotion injection timing: từ sau async_process_turn (dead code) → trước async_process_turn (active).
+      Kết quả: filler selector và TTS prosody phản ánh emotion ngay trong turn hiện tại.
+    </item>
+    <item id="WC3" severity="breaking">
+      TTS fallback order mặc định đổi từ ElevenLabs-first sang edge-tts-first.
+      Rows DB cũ giữ nguyên — phải chạy SQL update thủ công hoặc lưu lại qua Portal.
+    </item>
+    <item id="WC4" severity="info">
+      STT engine giờ đọc từ DB (sys_cfg.stt.engine) thay vì env var.
+      Env var vẫn là fallback khi NestJS unreachable (qua _fallback()).
+      Không cần restart để đổi STT engine — POST /config/reload là đủ.
+    </item>
+  </workflow_changes>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <risks>
+    <risk id="R1" severity="high">
+      funasr dependency kéo theo PyTorch ~1.5GB + SenseVoice model ~500MB.
+      Mitigation: tách funasr thành optional group; chỉ install khi engine=sensevoice.
+        [project.optional-dependencies]
+        sensevoice = ["funasr>=1.2.0"]
+      Install: uv sync --extra sensevoice
+    </risk>
+    <risk id="R2" severity="high">
+      SenseVoice model download ~500MB khi startup lần đầu → timeout lifespan.
+      Mitigation: pre-pull trong Dockerfile:
+        RUN python -c "from funasr import AutoModel; AutoModel(model='iic/SenseVoiceSmall')"
+      Hoặc mount HuggingFace cache volume.
+    </risk>
+    <risk id="R3" severity="medium">
+      Vietnamese emotion accuracy chưa được benchmark — SenseVoice train chủ yếu Chinese/English.
+      Mitigation: A/B test song song faster-whisper (emotion=None) và SenseVoice.
+      Chạy SenseVoice với DB engine=sensevoice trên 1 campaign thử trước.
+    </risk>
+    <risk id="R4" severity="medium">
+      CPU latency của SenseVoice chưa đo trên OrbStack.
+      Benchmark target: transcribe_pcm cho 2-3 giây audio phải &lt; 300ms trên CPU.
+      Nếu không đạt → fallback về faster-whisper bằng cách đổi DB config.
+    </risk>
+    <risk id="R5" severity="low">
+      DB rows cũ giữ TTS fallback order cũ (ElevenLabs-first).
+      Mitigation: chạy SQL sau deploy P1:
+        UPDATE tts_settings
+        SET "engineFallbackOrder" = '["edge-tts","local","elevenlabs"]'
+        WHERE id = 'default';
+    </risk>
+  </risks>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <file_summary>
+    <new>
+      services/voice/stt/sensevoice_stt.py
+      services/voice/tests/test_sensevoice_stt.py
+      apps/api/src/migrations/TIMESTAMP-add-stt-engine.ts
+    </new>
+    <modify>
+      services/voice/stt/faster_whisper_stt.py       (STTResult + emotion field)
+      services/voice/tts/params.py                    (thêm sad/fearful/disgusted/surprised)
+      services/voice/tts/chain.py                     (fallback order default)
+      services/voice/api/remote_config.py             (SttConfig engine + TTS fallback order x2)
+      services/voice/api/main.py                      (_build_stt sensevoice branch)
+      services/voice/api/config.py                    (stt_engine comment)
+      services/voice/api/routers/ws.py                (queue type + emotion injection + dead code)
+      services/voice/pyproject.toml                   (funasr dep + coverage omit)
+      services/voice/tests/test_stt.py                (STTResult emotion tests)
+      apps/api/src/settings/stt-settings.entity.ts    (engine column)
+      apps/api/src/settings/dto/upsert-stt.dto.ts     (engine field)
+      apps/api/src/settings/tts-settings.entity.ts    (fallback order default)
+    </modify>
+    <total_files>15 (3 new, 12 modify)</total_files>
+  </file_summary>
+
+  <execution_order>
+    P1 (TTS fallback order) →
+    P2 (STTResult + emotion map) →
+    P3 (SenseVoiceSTT engine) →
+    P4 (Wire emotion ws.py) →
+    P5 (Config DB + remote_config) →
+    P6 (Tests)
+    SQL update cho TTS fallback rows sau khi deploy P1.
+  </execution_order>
+
+</plan>
