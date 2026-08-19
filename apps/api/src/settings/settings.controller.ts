@@ -12,6 +12,7 @@ import { UpsertTtsDto } from './dto/upsert-tts.dto'
 import { UpsertNotifyDto } from './dto/upsert-notify.dto'
 import { UpsertVoiceWorkerDto } from './dto/upsert-voice-worker.dto'
 import { UpsertDoctorCheckDto } from './dto/upsert-doctorcheck.dto'
+import { UpsertConversationDto } from './dto/upsert-conversation.dto'
 
 interface AuthRequest {
   user: { userId: string; email: string }
@@ -39,9 +40,14 @@ export class SettingsController {
   @Roles('admin')
   @ApiOperation({ summary: 'Update CloudFone connection settings (admin only)' })
   async upsertCloudFone(@Body() dto: UpsertCloudFoneDto, @Request() req: AuthRequest) {
-    const settings = await this.svc.upsertCloudFone(dto, req.user.userId)
-    void this.audit.log({ actorId: req.user.userId, actorEmail: req.user.email, action: 'update', entity: 'cloudfone_settings', entityId: 'default', diff: { after: { odsUrl: dto.odsUrl, tenantId: dto.tenantId } } })
-    return settings
+    const before = await this.svc.getCloudFone()
+    const after = await this.svc.upsertCloudFone(dto, req.user.userId)
+    void this.audit.log({
+      actorId: req.user.userId, actorEmail: req.user.email, action: 'update',
+      entity: 'cloudfone_settings', entityId: 'default',
+      diff: { before: { socket: before.socket, user: before.user }, after: { socket: dto.socket, user: dto.user } },
+    })
+    return after
   }
 
   @Post('cloudfone/test')
@@ -63,9 +69,15 @@ export class SettingsController {
   @Roles('admin')
   @ApiOperation({ summary: 'Update AI / LLM settings (admin only)' })
   async upsertAi(@Body() dto: UpsertAiDto, @Request() req: AuthRequest) {
-    const settings = await this.svc.upsertAi(dto, req.user.userId)
-    void this.audit.log({ actorId: req.user.userId, actorEmail: req.user.email, action: 'update', entity: 'ai_settings', entityId: 'default', diff: { after: { ollamaBaseUrl: dto.ollamaBaseUrl, ollamaModel: dto.ollamaModel } } })
-    return settings
+    const before = await this.svc.getAi()
+    const after = await this.svc.upsertAi(dto, req.user.userId)
+    void this.audit.log({
+      actorId: req.user.userId, actorEmail: req.user.email, action: 'update',
+      entity: 'ai_settings', entityId: 'default',
+      diff: { before: { ollamaBaseUrl: before.ollamaBaseUrl, ollamaModel: before.ollamaModel }, after: { ollamaBaseUrl: dto.ollamaBaseUrl, ollamaModel: dto.ollamaModel } },
+    })
+    void this.svc.notifyVoiceWorkerConfigReload()
+    return after
   }
 
   // ── STT ───────────────────────────────────────────────────────────────────
@@ -80,9 +92,14 @@ export class SettingsController {
   @Roles('admin')
   @ApiOperation({ summary: 'Update STT settings (admin only)' })
   async upsertStt(@Body() dto: UpsertSttDto, @Request() req: AuthRequest) {
-    const settings = await this.svc.upsertStt(dto, req.user.userId)
-    void this.audit.log({ actorId: req.user.userId, actorEmail: req.user.email, action: 'update', entity: 'stt_settings', entityId: 'default', diff: { after: { modelSize: dto.modelSize, device: dto.device } } })
-    return settings
+    const before = await this.svc.getStt()
+    const after = await this.svc.upsertStt(dto, req.user.userId)
+    void this.audit.log({
+      actorId: req.user.userId, actorEmail: req.user.email, action: 'update',
+      entity: 'stt_settings', entityId: 'default',
+      diff: { before: { modelSize: before.modelSize, device: before.device }, after: { modelSize: dto.modelSize, device: dto.device } },
+    })
+    return after
   }
 
   // ── TTS ───────────────────────────────────────────────────────────────────
@@ -93,14 +110,28 @@ export class SettingsController {
     return this.svc.getTts()
   }
 
+  @Get('tts/health')
+  @ApiOperation({ summary: 'TTS engine health — circuit breaker + quota status' })
+  async getTtsHealth() {
+    return this.svc.getTtsHealth()
+  }
+
   @Put('tts')
   @Roles('admin')
   @ApiOperation({ summary: 'Update TTS settings (admin only)' })
   async upsertTts(@Body() dto: UpsertTtsDto, @Request() req: AuthRequest) {
-    const settings = await this.svc.upsertTts(dto, req.user.userId)
-    void this.audit.log({ actorId: req.user.userId, actorEmail: req.user.email, action: 'update', entity: 'tts_settings', entityId: 'default', diff: { after: { engine: dto.engine, voice: dto.voice } } })
+    const before = await this.svc.getTts()
+    const after = await this.svc.upsertTts(dto, req.user.userId)
+    void this.audit.log({
+      actorId: req.user.userId, actorEmail: req.user.email, action: 'update',
+      entity: 'tts_settings', entityId: 'default',
+      diff: {
+        before: { engine: before.engine, voice: before.voice, engineFallbackOrder: before.engineFallbackOrder },
+        after: { engine: dto.engine, voice: dto.voice, engineFallbackOrder: dto.engineFallbackOrder },
+      },
+    })
     void this.svc.notifyVoiceWorkerConfigReload()
-    return settings
+    return after
   }
 
   // ── Notify ────────────────────────────────────────────────────────────────
@@ -115,9 +146,14 @@ export class SettingsController {
   @Roles('admin')
   @ApiOperation({ summary: 'Update notification settings (admin only)' })
   async upsertNotify(@Body() dto: UpsertNotifyDto, @Request() req: AuthRequest) {
-    const settings = await this.svc.upsertNotify(dto, req.user.userId)
-    void this.audit.log({ actorId: req.user.userId, actorEmail: req.user.email, action: 'update', entity: 'notify_settings', entityId: 'default', diff: { after: { platform: dto.platform, telegramGroupId: dto.telegramGroupId } } })
-    return settings
+    const before = await this.svc.getNotify()
+    const after = await this.svc.upsertNotify(dto, req.user.userId)
+    void this.audit.log({
+      actorId: req.user.userId, actorEmail: req.user.email, action: 'update',
+      entity: 'notify_settings', entityId: 'default',
+      diff: { before: { platform: before.platform, telegramGroupId: before.telegramGroupId }, after: { platform: dto.platform, telegramGroupId: dto.telegramGroupId } },
+    })
+    return after
   }
 
   // ── Voice Worker ──────────────────────────────────────────────────────────
@@ -132,9 +168,17 @@ export class SettingsController {
   @Roles('admin')
   @ApiOperation({ summary: 'Update voice worker settings (admin only)' })
   async upsertVoiceWorker(@Body() dto: UpsertVoiceWorkerDto, @Request() req: AuthRequest) {
-    const settings = await this.svc.upsertVoiceWorker(dto, req.user.userId)
-    void this.audit.log({ actorId: req.user.userId, actorEmail: req.user.email, action: 'update', entity: 'voice_worker_settings', entityId: 'default', diff: { after: { internalUrl: dto.internalUrl, maxConcurrentSessions: dto.maxConcurrentSessions } } })
-    return settings
+    const before = await this.svc.getVoiceWorker()
+    const after = await this.svc.upsertVoiceWorker(dto, req.user.userId)
+    void this.audit.log({
+      actorId: req.user.userId, actorEmail: req.user.email, action: 'update',
+      entity: 'voice_worker_settings', entityId: 'default',
+      diff: {
+        before: { internalUrl: before.internalUrl, maxConcurrentSessions: before.maxConcurrentSessions },
+        after: { internalUrl: dto.internalUrl, maxConcurrentSessions: dto.maxConcurrentSessions },
+      },
+    })
+    return after
   }
 
   // ── DoctorCheck ───────────────────────────────────────────────────────────
@@ -149,9 +193,14 @@ export class SettingsController {
   @Roles('admin')
   @ApiOperation({ summary: 'Update DoctorCheck API settings (admin only)' })
   async upsertDoctorCheck(@Body() dto: UpsertDoctorCheckDto, @Request() req: AuthRequest) {
-    const settings = await this.svc.upsertDoctorCheck(dto, req.user.userId)
-    void this.audit.log({ actorId: req.user.userId, actorEmail: req.user.email, action: 'update', entity: 'doctorcheck_settings', entityId: 'default', diff: { after: { baseUrl: dto.baseUrl } } })
-    return settings
+    const before = await this.svc.getDoctorCheck()
+    const after = await this.svc.upsertDoctorCheck(dto, req.user.userId)
+    void this.audit.log({
+      actorId: req.user.userId, actorEmail: req.user.email, action: 'update',
+      entity: 'doctorcheck_settings', entityId: 'default',
+      diff: { before: { baseUrl: before.baseUrl }, after: { baseUrl: dto.baseUrl } },
+    })
+    return after
   }
 
   @Post('doctorcheck/test')
@@ -159,5 +208,30 @@ export class SettingsController {
   @ApiOperation({ summary: 'Test DoctorCheck API connectivity' })
   testDoctorCheck() {
     return this.svc.testDoctorCheckConnection()
+  }
+
+  // ── Conversation ──────────────────────────────────────────────────────────
+
+  @Get('conversation')
+  @ApiOperation({ summary: 'Get LLM Conversation settings' })
+  getConversation() {
+    return this.svc.getConversation()
+  }
+
+  @Put('conversation')
+  @Roles('admin')
+  @ApiOperation({ summary: 'Update LLM Conversation settings (admin only)' })
+  async upsertConversation(@Body() dto: UpsertConversationDto, @Request() req: AuthRequest) {
+    const before = await this.svc.getConversation()
+    const after = await this.svc.upsertConversation(dto, req.user.userId)
+    void this.audit.log({
+      actorId: req.user.userId, actorEmail: req.user.email, action: 'update',
+      entity: 'conversation_settings', entityId: 'default',
+      diff: {
+        before: { enabled: before.enabled, ollamaModel: before.ollamaModel, sentimentEnabled: before.sentimentEnabled },
+        after: { enabled: dto.enabled, ollamaModel: dto.ollamaModel, sentimentEnabled: dto.sentimentEnabled },
+      },
+    })
+    return after
   }
 }

@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, Min, Max } from 'class-validator'
+import { IsString, IsNumber, IsOptional, IsArray, IsInt, Min, Max } from 'class-validator'
 
 export class UpsertTtsDto {
   @IsString()
@@ -48,4 +48,23 @@ export class UpsertTtsDto {
 
   @IsOptional()
   elevenlabsUseSpeakerBoost?: boolean
+
+  @IsOptional()
+  @IsArray()
+  engineFallbackOrder?: string[]
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  elevenlabsDailyCharQuota?: number
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  circuitBreakerFailures?: number
+
+  @IsOptional()
+  @IsInt()
+  @Min(30)
+  circuitBreakerResetSecs?: number
 }

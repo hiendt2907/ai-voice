@@ -2,11 +2,17 @@ import { IsString } from 'class-validator'
 
 export class UpsertCloudFoneDto {
   @IsString()
-  odsUrl: string
+  socket: string
 
   @IsString()
-  apiKey: string
+  port: string
 
   @IsString()
-  tenantId: string
+  realm: string
+
+  @IsString()
+  user: string
+
+  @IsString()
+  password: string
 }

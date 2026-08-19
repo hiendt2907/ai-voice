@@ -1,0 +1,124 @@
+import { MigrationInterface, QueryRunner } from "typeorm";
+
+export class InitSchema1787114705404 implements MigrationInterface {
+    name = 'InitSchema1787114705404'
+
+    public async up(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`CREATE TYPE "public"."users_role_enum" AS ENUM('admin', 'operator', 'qa', 'viewer')`);
+        await queryRunner.query(`CREATE TABLE "users" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "email" character varying NOT NULL, "passwordHash" character varying NOT NULL, "fullName" character varying NOT NULL, "role" "public"."users_role_enum" NOT NULL DEFAULT 'viewer', "isActive" boolean NOT NULL DEFAULT true, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), "deletedAt" TIMESTAMP, CONSTRAINT "UQ_97672ac88f789774dd47f7c8be3" UNIQUE ("email"), CONSTRAINT "PK_a3ffb1c0c8416b9fc6f907b7433" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TABLE "voice_worker_settings" ("id" character varying NOT NULL DEFAULT 'default', "internalUrl" character varying NOT NULL DEFAULT 'http://localhost:8000', "maxConcurrentSessions" integer NOT NULL DEFAULT '10', "sessionCacheTtlSeconds" integer NOT NULL DEFAULT '3600', "updatedBy" character varying, "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_816b7b5ac31c559f4b99c14bc4b" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TABLE "tts_settings" ("id" character varying NOT NULL DEFAULT 'default', "engine" character varying NOT NULL DEFAULT 'edge-tts', "voice" character varying NOT NULL DEFAULT 'vi-VN-HoaiMyNeural', "sampleRate" integer NOT NULL DEFAULT '8000', "speedFactor" double precision NOT NULL DEFAULT '1', "elevenlabsApiKey" character varying, "elevenlabsVoiceId" character varying NOT NULL DEFAULT 'hpp4J3VqNfWAUOO0d1Us', "elevenlabsModelId" character varying NOT NULL DEFAULT 'eleven_turbo_v2_5', "elevenlabsStability" double precision NOT NULL DEFAULT '0.6', "elevenlabsSimilarityBoost" double precision NOT NULL DEFAULT '0.75', "elevenlabsStyleExaggeration" double precision NOT NULL DEFAULT '0.3', "elevenlabsUseSpeakerBoost" boolean NOT NULL DEFAULT true, "engineFallbackOrder" text NOT NULL DEFAULT '["local","edge-tts","elevenlabs"]', "elevenlabsDailyCharQuota" integer NOT NULL DEFAULT '0', "circuitBreakerFailures" integer NOT NULL DEFAULT '3', "circuitBreakerResetSecs" integer NOT NULL DEFAULT '300', "updatedBy" character varying, "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_5ca5972e57f8af51c6d0e4b8186" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TABLE "stt_settings" ("id" character varying NOT NULL DEFAULT 'default', "modelSize" character varying NOT NULL DEFAULT 'small', "device" character varying NOT NULL DEFAULT 'cpu', "computeType" character varying NOT NULL DEFAULT 'int8', "language" character varying NOT NULL DEFAULT 'vi', "endOfUtteranceSilenceMs" integer NOT NULL DEFAULT '400', "updatedBy" character varying, "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_045824a3911922dd86d1eac5147" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TABLE "notify_settings" ("id" character varying NOT NULL DEFAULT 'default', "platform" character varying NOT NULL DEFAULT 'telegram', "teamsWebhookUrl" character varying NOT NULL DEFAULT '', "telegramBotToken" character varying NOT NULL DEFAULT '', "telegramGroupId" character varying NOT NULL DEFAULT '', "questionTimeoutSeconds" integer NOT NULL DEFAULT '300', "callbackDelayMinutes" integer NOT NULL DEFAULT '10', "updatedBy" character varying, "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_c20edc8ef20a48959b2ed7b229f" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TABLE "doctorcheck_settings" ("id" character varying NOT NULL DEFAULT 'default', "baseUrl" character varying NOT NULL DEFAULT '', "apiKey" character varying, "specialtyMapping" jsonb NOT NULL DEFAULT '{}', "slotMapping" jsonb NOT NULL DEFAULT '{}', "bookingConfirmTemplate" character varying NOT NULL DEFAULT 'Mã đặt lịch của anh/chị là {{booking_id}} ạ.', "retryCount" integer NOT NULL DEFAULT '2', "timeoutMs" integer NOT NULL DEFAULT '3000', "updatedBy" character varying, "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_dc7768a20028b8fa1a57ee6d7ad" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TABLE "conversation_settings" ("id" character varying NOT NULL DEFAULT 'default', "enabled" boolean NOT NULL DEFAULT false, "ollamaModel" character varying NOT NULL DEFAULT 'qwen2.5:3b', "systemPrompt" text NOT NULL DEFAULT '', "maxHistoryTurns" integer NOT NULL DEFAULT '5', "temperature" double precision NOT NULL DEFAULT '0.3', "sentimentEnabled" boolean NOT NULL DEFAULT false, "kbGroundingEnabled" boolean NOT NULL DEFAULT true, "sentenceSplitMinChars" integer NOT NULL DEFAULT '30', "updatedBy" character varying, "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_931b3e08fbf0ea7c9c335286f95" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TABLE "cloudfone_settings" ("id" character varying NOT NULL DEFAULT 'default', "socket" character varying NOT NULL DEFAULT '', "port" character varying NOT NULL DEFAULT '', "realm" character varying NOT NULL DEFAULT '', "user" character varying NOT NULL DEFAULT '', "password" character varying NOT NULL DEFAULT '', "updatedBy" character varying, "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_0f268a74bfd0e128b88a70e3f8a" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TABLE "ai_settings" ("id" character varying NOT NULL DEFAULT 'default', "ollamaBaseUrl" character varying NOT NULL DEFAULT 'http://localhost:11434/v1', "ollamaModel" character varying NOT NULL DEFAULT 'qwen2.5:latest', "nluTimeoutMs" integer NOT NULL DEFAULT '800', "responseTimeoutMs" integer NOT NULL DEFAULT '2000', "fallbackToSubstring" boolean NOT NULL DEFAULT true, "updatedBy" character varying, "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_b6c95e8fdde441f7e72e1d4f10c" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TABLE "voice_profiles" ("id" character varying NOT NULL, "displayName" character varying NOT NULL, "gender" character varying NOT NULL DEFAULT 'male', "region" character varying, "ttsEngine" character varying NOT NULL DEFAULT 'qwen-tts', "ttsVoiceId" character varying NOT NULL, "elevenlabsVoiceId" character varying, "sampleRate" integer NOT NULL DEFAULT '8000', "stabilityFactor" double precision NOT NULL DEFAULT '0.6', "similarityBoost" double precision NOT NULL DEFAULT '0.75', "styleExaggeration" double precision NOT NULL DEFAULT '0.3', "useSpeakerBoost" boolean NOT NULL DEFAULT true, "prosodyPreset" jsonb, "customFillerPool" text, "isActive" boolean NOT NULL DEFAULT true, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_7497ef428ee4b04a11375ed1b32" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TYPE "public"."campaigns_direction_enum" AS ENUM('inbound', 'outbound')`);
+        await queryRunner.query(`CREATE TYPE "public"."campaigns_interceptionmode_enum" AS ENUM('shadow', 'medium', 'full')`);
+        await queryRunner.query(`CREATE TABLE "campaigns" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "name" character varying NOT NULL, "direction" "public"."campaigns_direction_enum" NOT NULL, "voiceProfile" character varying NOT NULL, "isActive" boolean NOT NULL DEFAULT false, "publishedVersionId" uuid, "interceptionMode" "public"."campaigns_interceptionmode_enum" NOT NULL DEFAULT 'shadow', "interceptionDomains" text NOT NULL DEFAULT '', "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_831e3fcd4fc45b4e4c3f57a9ee4" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TYPE "public"."script_versions_status_enum" AS ENUM('draft', 'under_review', 'published', 'archived')`);
+        await queryRunner.query(`CREATE TABLE "script_versions" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "campaignId" uuid NOT NULL, "version" character varying NOT NULL, "body" jsonb NOT NULL, "status" "public"."script_versions_status_enum" NOT NULL DEFAULT 'draft', "reviewNote" text, "createdBy" character varying, "publishedAt" TIMESTAMP, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_05494fb2a8bc305d461b06dcb63" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_15394577e12523426ebeb0deee" ON "script_versions" ("campaignId", "status") `);
+        await queryRunner.query(`CREATE TABLE "hotline_routes" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "hotlineNumber" character varying NOT NULL, "campaignId" uuid NOT NULL, "isActive" boolean NOT NULL DEFAULT true, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "UQ_77cd2c6b82a4a575abefa93cfe1" UNIQUE ("hotlineNumber"), CONSTRAINT "PK_f20a0b242b5c1a530dcdfe3997e" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TABLE "nlu_documents" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "type" character varying(50) NOT NULL, "label" character varying(255) NOT NULL, "content" text NOT NULL, "meta" jsonb DEFAULT '{}', "embeddingJson" text, "campaignId" uuid, "scriptId" uuid, "isActive" boolean NOT NULL DEFAULT true, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_457d1ec68c33218e1808d0ab891" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_e61c8d7733c190e4fd8ad452a2" ON "nlu_documents" ("campaignId", "type") `);
+        await queryRunner.query(`CREATE INDEX "IDX_f47cd8b9431634ee8a008f7b5e" ON "nlu_documents" ("type", "isActive") `);
+        await queryRunner.query(`CREATE TYPE "public"."learning_proposals_type_enum" AS ENUM('new_intent_example', 'edit_variant', 'add_reprompt', 'slot_correction')`);
+        await queryRunner.query(`CREATE TYPE "public"."learning_proposals_status_enum" AS ENUM('pending', 'approved', 'rejected')`);
+        await queryRunner.query(`CREATE TABLE "learning_proposals" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "callSessionId" uuid, "type" "public"."learning_proposals_type_enum" NOT NULL, "payload" jsonb NOT NULL, "status" "public"."learning_proposals_status_enum" NOT NULL DEFAULT 'pending', "reviewedBy" character varying, "reviewNote" text, "reviewedAt" TIMESTAMP, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_322b02880f3b70d6e162c68709c" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_c06cc63c5645f4c393637a82ba" ON "learning_proposals" ("status", "createdAt") `);
+        await queryRunner.query(`CREATE TYPE "public"."learning_applications_status_enum" AS ENUM('applied', 'failed')`);
+        await queryRunner.query(`CREATE TABLE "learning_applications" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "proposalId" uuid NOT NULL, "targetCampaignId" uuid NOT NULL, "resultVersionId" uuid, "appliedBy" uuid NOT NULL, "appliedAt" TIMESTAMP NOT NULL DEFAULT now(), "status" "public"."learning_applications_status_enum" NOT NULL DEFAULT 'applied', CONSTRAINT "UQ_76c2b5b9c90bec024fb4168b506" UNIQUE ("proposalId"), CONSTRAINT "REL_76c2b5b9c90bec024fb4168b50" UNIQUE ("proposalId"), CONSTRAINT "PK_6b12473554b575e07c45b31e3ca" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TABLE "knowledge_articles" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "title" character varying(255) NOT NULL, "category" character varying(100), "tags" text, "questionVariants" text, "answerText" text NOT NULL, "answerMale" text, "answerFemale" text, "embeddingJson" text, "confidenceThreshold" double precision NOT NULL DEFAULT '0.82', "scriptId" uuid, "isActive" boolean NOT NULL DEFAULT true, "createdBy" character varying, "updatedBy" character varying, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_4dff86fc9e08f53fe1d4cfe5fb1" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_62a900ddcba4ec2757eef49534" ON "knowledge_articles" ("isActive", "category") `);
+        await queryRunner.query(`CREATE TABLE "service_api_keys" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "name" character varying NOT NULL, "keyHash" character varying NOT NULL, "isActive" boolean NOT NULL DEFAULT true, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "UQ_ef16712a487f2f551a196731c81" UNIQUE ("name"), CONSTRAINT "PK_9dee5fe94934ecc67a0f7a411ae" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TYPE "public"."call_sessions_direction_enum" AS ENUM('inbound', 'outbound')`);
+        await queryRunner.query(`CREATE TYPE "public"."call_sessions_status_enum" AS ENUM('active', 'completed', 'handoff', 'error')`);
+        await queryRunner.query(`CREATE TABLE "call_sessions" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "campaignId" uuid, "scriptVersionId" uuid, "sessionId" character varying NOT NULL, "direction" "public"."call_sessions_direction_enum" NOT NULL DEFAULT 'inbound', "callerNumberMasked" character varying, "status" "public"."call_sessions_status_enum" NOT NULL DEFAULT 'active', "transcript" jsonb, "slots" jsonb, "finalStepId" character varying, "durationSeconds" integer, "startedAt" TIMESTAMP, "endedAt" TIMESTAMP, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "UQ_540c544c914fa20ecffaefc860a" UNIQUE ("sessionId"), CONSTRAINT "PK_43019a4ddb87c365c3d13fbe9e0" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_f255329ecffc135d9821bedde4" ON "call_sessions" ("status", "createdAt") `);
+        await queryRunner.query(`CREATE INDEX "IDX_77ff0b846259f04b2eeb2aa88c" ON "call_sessions" ("campaignId", "createdAt") `);
+        await queryRunner.query(`CREATE TYPE "public"."call_turns_role_enum" AS ENUM('agent', 'caller', 'system')`);
+        await queryRunner.query(`CREATE TABLE "call_turns" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "callSessionId" uuid NOT NULL, "seq" integer NOT NULL, "role" "public"."call_turns_role_enum" NOT NULL, "stepId" character varying, "intent" character varying, "text" text NOT NULL DEFAULT '', "audioOffsetMs" integer, "latencyMs" integer, "metadata" jsonb, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "UQ_8187ab08d43d44028ff13d37a5b" UNIQUE ("callSessionId", "seq"), CONSTRAINT "PK_2bfc685cc1104d07effea901274" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_8187ab08d43d44028ff13d37a5" ON "call_turns" ("callSessionId", "seq") `);
+        await queryRunner.query(`CREATE TABLE "call_recordings" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "callSessionId" uuid NOT NULL, "storageKey" character varying NOT NULL, "format" character varying NOT NULL DEFAULT 'wav', "durationSeconds" integer NOT NULL, "sizeBytes" bigint, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "UQ_77ee1eb4db20fecfba9e062dfba" UNIQUE ("callSessionId"), CONSTRAINT "REL_77ee1eb4db20fecfba9e062dfb" UNIQUE ("callSessionId"), CONSTRAINT "PK_4825dd582adb1f8c2f29cf74106" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TABLE "qa_scores" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "callSessionId" uuid NOT NULL, "scoredBy" uuid NOT NULL, "score" smallint NOT NULL, "notes" text, "tags" jsonb NOT NULL DEFAULT '[]', "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_43bb1dee9a0db4fa3dd2ca13931" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_e1ba509e90e2d02cbb06f3fab6" ON "qa_scores" ("callSessionId") `);
+        await queryRunner.query(`CREATE TABLE "call_metrics" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "callSessionId" uuid NOT NULL, "ttfaMs" integer, "avgTurnLatencyMs" integer, "bargeInCount" integer NOT NULL DEFAULT '0', "noMatchCount" integer NOT NULL DEFAULT '0', "repromptCount" integer NOT NULL DEFAULT '0', "stepCount" integer, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "UQ_ed36047a81ab00eb171429c02d1" UNIQUE ("callSessionId"), CONSTRAINT "REL_ed36047a81ab00eb171429c02d" UNIQUE ("callSessionId"), CONSTRAINT "PK_772f0fce57094802836cde1f644" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TYPE "public"."callback_requests_reason_enum" AS ENUM('unanswered_question', 'handoff_requested')`);
+        await queryRunner.query(`CREATE TYPE "public"."callback_requests_status_enum" AS ENUM('pending', 'scheduled', 'completed', 'failed')`);
+        await queryRunner.query(`CREATE TABLE "callback_requests" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "session_id" character varying NOT NULL, "caller_number_masked" character varying, "reason" "public"."callback_requests_reason_enum" NOT NULL DEFAULT 'unanswered_question', "question_text" text, "status" "public"."callback_requests_status_enum" NOT NULL DEFAULT 'pending', "scheduled_at" TIMESTAMP, "completed_at" TIMESTAMP, "created_at" TIMESTAMP NOT NULL DEFAULT now(), "updated_at" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_4004a32558adaaf5d8af014ca4e" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TABLE "refresh_tokens" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "userId" uuid NOT NULL, "jti" character varying NOT NULL, "expiresAt" TIMESTAMP WITH TIME ZONE NOT NULL, "revokedAt" TIMESTAMP WITH TIME ZONE, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "UQ_f3752400c98d5c0b3dca54d66d5" UNIQUE ("jti"), CONSTRAINT "PK_7d8bee0204106019488c4c50ffa" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TABLE "audit_events" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "actorId" character varying NOT NULL, "actorEmail" character varying NOT NULL, "action" character varying NOT NULL, "entity" character varying NOT NULL, "entityId" character varying, "diff" jsonb, "ipAddress" character varying, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_910f64d901a5c3e9878f0d4a407" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_91d836023fab9e2df67fdd303a" ON "audit_events" ("entity", "entityId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_279feedfeb90730bb264b5a470" ON "audit_events" ("actorId", "createdAt") `);
+        await queryRunner.query(`CREATE TABLE "analytics_daily" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "date" date NOT NULL, "campaignId" uuid, "totalCalls" integer NOT NULL DEFAULT '0', "completedCalls" integer NOT NULL DEFAULT '0', "handoffCalls" integer NOT NULL DEFAULT '0', "errorCalls" integer NOT NULL DEFAULT '0', "avgDurationSeconds" numeric(10,2) NOT NULL DEFAULT '0', "avgQaScore" numeric(4,2), "containmentRate" numeric(5,4) NOT NULL DEFAULT '0', "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "UQ_ae4fd7d0de02c4e36d3b304e7a3" UNIQUE ("date", "campaignId"), CONSTRAINT "PK_a6dd8ca1a03006b05a665aefbd8" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`ALTER TABLE "script_versions" ADD CONSTRAINT "FK_a0066ecea0da9c10e80e32cbd8d" FOREIGN KEY ("campaignId") REFERENCES "campaigns"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "learning_applications" ADD CONSTRAINT "FK_76c2b5b9c90bec024fb4168b506" FOREIGN KEY ("proposalId") REFERENCES "learning_proposals"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "call_turns" ADD CONSTRAINT "FK_ecbcc8a8c23fb2ecb879a8f4f68" FOREIGN KEY ("callSessionId") REFERENCES "call_sessions"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "call_recordings" ADD CONSTRAINT "FK_77ee1eb4db20fecfba9e062dfba" FOREIGN KEY ("callSessionId") REFERENCES "call_sessions"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "qa_scores" ADD CONSTRAINT "FK_e1ba509e90e2d02cbb06f3fab67" FOREIGN KEY ("callSessionId") REFERENCES "call_sessions"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "call_metrics" ADD CONSTRAINT "FK_ed36047a81ab00eb171429c02d1" FOREIGN KEY ("callSessionId") REFERENCES "call_sessions"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+    }
+
+    public async down(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`ALTER TABLE "call_metrics" DROP CONSTRAINT "FK_ed36047a81ab00eb171429c02d1"`);
+        await queryRunner.query(`ALTER TABLE "qa_scores" DROP CONSTRAINT "FK_e1ba509e90e2d02cbb06f3fab67"`);
+        await queryRunner.query(`ALTER TABLE "call_recordings" DROP CONSTRAINT "FK_77ee1eb4db20fecfba9e062dfba"`);
+        await queryRunner.query(`ALTER TABLE "call_turns" DROP CONSTRAINT "FK_ecbcc8a8c23fb2ecb879a8f4f68"`);
+        await queryRunner.query(`ALTER TABLE "learning_applications" DROP CONSTRAINT "FK_76c2b5b9c90bec024fb4168b506"`);
+        await queryRunner.query(`ALTER TABLE "script_versions" DROP CONSTRAINT "FK_a0066ecea0da9c10e80e32cbd8d"`);
+        await queryRunner.query(`DROP TABLE "analytics_daily"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_279feedfeb90730bb264b5a470"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_91d836023fab9e2df67fdd303a"`);
+        await queryRunner.query(`DROP TABLE "audit_events"`);
+        await queryRunner.query(`DROP TABLE "refresh_tokens"`);
+        await queryRunner.query(`DROP TABLE "callback_requests"`);
+        await queryRunner.query(`DROP TYPE "public"."callback_requests_status_enum"`);
+        await queryRunner.query(`DROP TYPE "public"."callback_requests_reason_enum"`);
+        await queryRunner.query(`DROP TABLE "call_metrics"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_e1ba509e90e2d02cbb06f3fab6"`);
+        await queryRunner.query(`DROP TABLE "qa_scores"`);
+        await queryRunner.query(`DROP TABLE "call_recordings"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_8187ab08d43d44028ff13d37a5"`);
+        await queryRunner.query(`DROP TABLE "call_turns"`);
+        await queryRunner.query(`DROP TYPE "public"."call_turns_role_enum"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_77ff0b846259f04b2eeb2aa88c"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_f255329ecffc135d9821bedde4"`);
+        await queryRunner.query(`DROP TABLE "call_sessions"`);
+        await queryRunner.query(`DROP TYPE "public"."call_sessions_status_enum"`);
+        await queryRunner.query(`DROP TYPE "public"."call_sessions_direction_enum"`);
+        await queryRunner.query(`DROP TABLE "service_api_keys"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_62a900ddcba4ec2757eef49534"`);
+        await queryRunner.query(`DROP TABLE "knowledge_articles"`);
+        await queryRunner.query(`DROP TABLE "learning_applications"`);
+        await queryRunner.query(`DROP TYPE "public"."learning_applications_status_enum"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_c06cc63c5645f4c393637a82ba"`);
+        await queryRunner.query(`DROP TABLE "learning_proposals"`);
+        await queryRunner.query(`DROP TYPE "public"."learning_proposals_status_enum"`);
+        await queryRunner.query(`DROP TYPE "public"."learning_proposals_type_enum"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_f47cd8b9431634ee8a008f7b5e"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_e61c8d7733c190e4fd8ad452a2"`);
+        await queryRunner.query(`DROP TABLE "nlu_documents"`);
+        await queryRunner.query(`DROP TABLE "hotline_routes"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_15394577e12523426ebeb0deee"`);
+        await queryRunner.query(`DROP TABLE "script_versions"`);
+        await queryRunner.query(`DROP TYPE "public"."script_versions_status_enum"`);
+        await queryRunner.query(`DROP TABLE "campaigns"`);
+        await queryRunner.query(`DROP TYPE "public"."campaigns_interceptionmode_enum"`);
+        await queryRunner.query(`DROP TYPE "public"."campaigns_direction_enum"`);
+        await queryRunner.query(`DROP TABLE "voice_profiles"`);
+        await queryRunner.query(`DROP TABLE "ai_settings"`);
+        await queryRunner.query(`DROP TABLE "cloudfone_settings"`);
+        await queryRunner.query(`DROP TABLE "conversation_settings"`);
+        await queryRunner.query(`DROP TABLE "doctorcheck_settings"`);
+        await queryRunner.query(`DROP TABLE "notify_settings"`);
+        await queryRunner.query(`DROP TABLE "stt_settings"`);
+        await queryRunner.query(`DROP TABLE "tts_settings"`);
+        await queryRunner.query(`DROP TABLE "voice_worker_settings"`);
+        await queryRunner.query(`DROP TABLE "users"`);
+        await queryRunner.query(`DROP TYPE "public"."users_role_enum"`);
+    }
+
+}

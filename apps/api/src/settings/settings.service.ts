@@ -9,6 +9,7 @@ import { TtsSettings } from './tts-settings.entity'
 import { NotifySettings } from './notify-settings.entity'
 import { VoiceWorkerSettings } from './voice-worker-settings.entity'
 import { DoctorCheckSettings } from './doctorcheck-settings.entity'
+import { ConversationSettings } from './conversation-settings.entity'
 import { UpsertCloudFoneDto } from './dto/upsert-cloudfone.dto'
 import { UpsertAiDto } from './dto/upsert-ai.dto'
 import { UpsertSttDto } from './dto/upsert-stt.dto'
@@ -16,6 +17,7 @@ import { UpsertTtsDto } from './dto/upsert-tts.dto'
 import { UpsertNotifyDto } from './dto/upsert-notify.dto'
 import { UpsertVoiceWorkerDto } from './dto/upsert-voice-worker.dto'
 import { UpsertDoctorCheckDto } from './dto/upsert-doctorcheck.dto'
+import { UpsertConversationDto } from './dto/upsert-conversation.dto'
 
 const DEFAULT_ID = 'default'
 const VOICE_CONFIG_CACHE_KEY = 'config:system'
@@ -43,6 +45,7 @@ export interface SystemSettings {
   tts: TtsSettings
   notify: Omit<NotifySettings, 'telegramBotToken'> & { telegramBotToken: string }
   voiceWorker: VoiceWorkerSettings
+  conversation: ConversationSettings
 }
 
 @Injectable()
@@ -62,11 +65,13 @@ export class SettingsService implements OnModuleDestroy {
     private readonly voiceWorkerRepo: Repository<VoiceWorkerSettings>,
     @InjectRepository(DoctorCheckSettings)
     private readonly doctorCheckRepo: Repository<DoctorCheckSettings>,
+    @InjectRepository(ConversationSettings)
+    private readonly conversationRepo: Repository<ConversationSettings>,
   ) {}
 
   async getCloudFone(): Promise<CloudFoneSettings> {
     const row = await this.cloudfoneRepo.findOne({ where: { id: DEFAULT_ID } })
-    if (!row) return this.cloudfoneRepo.create({ id: DEFAULT_ID, odsUrl: '', apiKey: '', tenantId: '' })
+    if (!row) return this.cloudfoneRepo.create({ id: DEFAULT_ID, socket: '', port: '', realm: '', user: '', password: '' })
     return row
   }
 
@@ -76,19 +81,30 @@ export class SettingsService implements OnModuleDestroy {
 
   async testCloudFoneConnection(): Promise<{ ok: boolean; message: string }> {
     const settings = await this.getCloudFone()
-    if (!settings.odsUrl || !settings.apiKey) {
-      return { ok: false, message: 'Chưa cấu hình ODS URL hoặc API Key' }
+    if (!settings.socket || !settings.user) {
+      return { ok: false, message: 'Chưa cấu hình Socket hoặc User' }
     }
-    if (!settings.odsUrl.startsWith('wss://') && !settings.odsUrl.startsWith('ws://')) {
-      return { ok: false, message: 'ODS URL phải bắt đầu bằng wss:// hoặc ws://' }
-    }
-    try {
-      const httpUrl = settings.odsUrl.replace(/^wss?:\/\//, 'https://').split('/')[2]
-      await fetch(`https://${httpUrl}`, { signal: AbortSignal.timeout(3000) })
-      return { ok: true, message: `Kết nối thành công tới ${httpUrl}` }
-    } catch {
-      return { ok: false, message: 'Không thể kết nối — kiểm tra lại URL và network' }
-    }
+    // Extract hostname from socket URL (strip scheme)
+    const hostname = settings.socket.replace(/^wss?:\/\//, '')
+    const port = settings.port ? parseInt(settings.port, 10) : 443
+    const label = `${hostname}:${port}`
+
+    return new Promise((resolve) => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const tls = require('tls') as typeof import('tls')
+      const socket = tls.connect({ host: hostname, port, rejectUnauthorized: true }, () => {
+        socket.destroy()
+        resolve({ ok: true, message: `Kết nối TLS thành công tới ${label}` })
+      })
+      socket.setTimeout(5000)
+      socket.on('timeout', () => {
+        socket.destroy()
+        resolve({ ok: false, message: `Timeout kết nối tới ${label}` })
+      })
+      socket.on('error', (err: Error) => {
+        resolve({ ok: false, message: `Lỗi kết nối ${label}: ${err.message}` })
+      })
+    })
   }
 
   async getAi(): Promise<AiSettings> {
@@ -198,15 +214,39 @@ export class SettingsService implements OnModuleDestroy {
     _redis?.disconnect()
   }
 
+  async getTtsHealth(): Promise<object> {
+    const vw = await this.getVoiceWorker()
+    const base = vw.internalUrl ?? 'http://localhost:8000'
+    try {
+      const res = await fetch(`${base}/ws/tts-health`, { signal: AbortSignal.timeout(3000) })
+      if (res.ok) return res.json() as Promise<object>
+      return { error: `voice worker returned ${res.status}` }
+    } catch {
+      return { error: 'voice worker unreachable' }
+    }
+  }
+
+  async getConversation(): Promise<ConversationSettings> {
+    const row = await this.conversationRepo.findOne({ where: { id: DEFAULT_ID } })
+    return row ?? this.conversationRepo.create({ id: DEFAULT_ID })
+  }
+
+  async upsertConversation(dto: UpsertConversationDto, updatedBy: string): Promise<ConversationSettings> {
+    const saved = await this.conversationRepo.save({ id: DEFAULT_ID, ...dto, updatedBy })
+    void invalidateVoiceConfigCache()
+    return saved
+  }
+
   async getAllSettings(): Promise<SystemSettings> {
-    const [cloudfone, ai, stt, tts, notify, voiceWorker] = await Promise.all([
+    const [cloudfone, ai, stt, tts, notify, voiceWorker, conversation] = await Promise.all([
       this.getCloudFone(),
       this.getAi(),
       this.getStt(),
       this.getTtsRaw(),
       this.getNotify(),
       this.getVoiceWorker(),
+      this.getConversation(),
     ])
-    return { cloudfone, ai, stt, tts, notify, voiceWorker }
+    return { cloudfone, ai, stt, tts, notify, voiceWorker, conversation }
   }
 }

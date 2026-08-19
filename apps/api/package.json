@@ -4,15 +4,16 @@
   "private": true,
   "scripts": {
     "dev": "nest start --watch",
-    "build": "nest build",
+    "build": "nest build && tsc -p tsconfig.migrations.json",
     "start": "node dist/main",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "test": "jest",
     "test:e2e": "jest --config jest-e2e.json",
-    "migration:generate": "typeorm migration:generate",
-    "migration:run": "typeorm migration:run",
-    "migration:revert": "typeorm migration:revert"
+    "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/data-source.ts",
+    "migration:create": "typeorm-ts-node-commonjs migration:create",
+    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/data-source.ts",
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/data-source.ts"
   },
   "dependencies": {
     "@ai-voice/shared": "workspace:*",
@@ -50,7 +51,9 @@
     "@types/passport-jwt": "^4.0.1",
     "@types/passport-local": "^1.0.38",
     "@types/pg": "^8.11.10",
+    "dotenv": "^16.4.7",
     "jest": "^29.7.0",
+    "ts-node": "^10.9.2",
     "ts-jest": "^29.2.5",
     "ts-loader": "^9.5.7",
     "typescript": "^5.7.3",

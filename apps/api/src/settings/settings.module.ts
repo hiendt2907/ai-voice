@@ -7,6 +7,7 @@ import { TtsSettings } from './tts-settings.entity'
 import { NotifySettings } from './notify-settings.entity'
 import { VoiceWorkerSettings } from './voice-worker-settings.entity'
 import { DoctorCheckSettings } from './doctorcheck-settings.entity'
+import { ConversationSettings } from './conversation-settings.entity'
 import { SettingsService } from './settings.service'
 import { SettingsController } from './settings.controller'
 import { AuditModule } from '../audit/audit.module'
@@ -21,6 +22,7 @@ import { AuditModule } from '../audit/audit.module'
       NotifySettings,
       VoiceWorkerSettings,
       DoctorCheckSettings,
+      ConversationSettings,
     ]),
     AuditModule,
   ],

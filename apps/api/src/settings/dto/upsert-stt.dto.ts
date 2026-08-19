@@ -2,6 +2,9 @@ import { IsString, IsNumber, Min } from 'class-validator'
 
 export class UpsertSttDto {
   @IsString()
+  engine: string
+
+  @IsString()
   modelSize: string
 
   @IsString()

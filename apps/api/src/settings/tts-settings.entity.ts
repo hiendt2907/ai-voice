@@ -39,6 +39,18 @@ export class TtsSettings {
   @Column({ default: true })
   elevenlabsUseSpeakerBoost: boolean
 
+  @Column({ type: 'simple-json', default: () => `'["local","edge-tts","elevenlabs"]'` })
+  engineFallbackOrder: string[]
+
+  @Column({ default: 0 })
+  elevenlabsDailyCharQuota: number
+
+  @Column({ default: 3 })
+  circuitBreakerFailures: number
+
+  @Column({ default: 300 })
+  circuitBreakerResetSecs: number
+
   @Column({ type: 'varchar', nullable: true })
   updatedBy: string | null
 

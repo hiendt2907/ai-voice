@@ -6,13 +6,19 @@ export class CloudFoneSettings {
   id: string
 
   @Column({ default: '' })
-  odsUrl: string
+  socket: string
 
   @Column({ default: '' })
-  apiKey: string
+  port: string
 
   @Column({ default: '' })
-  tenantId: string
+  realm: string
+
+  @Column({ default: '' })
+  user: string
+
+  @Column({ default: '' })
+  password: string
 
   @Column({ type: 'varchar', nullable: true })
   updatedBy: string | null

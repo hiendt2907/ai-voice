@@ -255,6 +255,71 @@ const KB_ARTICLES = [
       'Dạ nếu kết quả bình thường, thông thường nội soi định kỳ mỗi 2-3 năm một lần ạ. Nếu có polyp hoặc tổn thương, bác sĩ sẽ khuyến cáo tái khám sớm hơn ạ. Bạn có thể mang kết quả cũ để bác sĩ đánh giá ạ.',
     confidenceThreshold: 0.65,
   },
+  {
+    title: 'Giờ khám và lịch làm việc DoctorCheck',
+    category: 'lich_kham',
+    tags: ['lich_kham', 'gio_kham', 'dat_lich'],
+    questionVariants: [
+      'hôm nay còn giờ nào trống',
+      'còn lịch không',
+      'giờ nào còn trống',
+      'còn chỗ không',
+      'hôm nay được không',
+      'giờ làm việc của phòng khám',
+      'phòng khám mở cửa mấy giờ',
+      'khám được vào buổi chiều không',
+      'sáng hay chiều còn giờ',
+      'còn chỗ khám không',
+      'lịch khám hôm nay còn không',
+      'có thể khám vào mấy giờ',
+    ],
+    answerText:
+      'Dạ DoctorCheck làm việc thứ Hai đến thứ Bảy ạ. Buổi sáng từ 7 giờ 30 đến 11 giờ 30, buổi chiều từ 13 giờ 30 đến 17 giờ ạ. Chủ Nhật phòng khám nghỉ. Anh/chị muốn đặt lịch vào buổi sáng hay buổi chiều ạ?',
+    answerMale:
+      'Dạ DoctorCheck làm việc thứ Hai đến thứ Bảy ạ. Buổi sáng từ 7 giờ 30 đến 11 giờ 30, buổi chiều từ 13 giờ 30 đến 17 giờ ạ. Chủ Nhật phòng khám nghỉ. Anh muốn đặt lịch vào buổi sáng hay buổi chiều ạ?',
+    answerFemale:
+      'Dạ DoctorCheck làm việc thứ Hai đến thứ Bảy ạ. Buổi sáng từ 7 giờ 30 đến 11 giờ 30, buổi chiều từ 13 giờ 30 đến 17 giờ ạ. Chủ Nhật phòng khám nghỉ. Chị muốn đặt lịch vào buổi sáng hay buổi chiều ạ?',
+    confidenceThreshold: 0.6,
+  },
+  {
+    title: 'Quy trình đặt lịch khám tại DoctorCheck',
+    category: 'dat_lich',
+    tags: ['dat_lich', 'quy_trinh', 'lich_kham'],
+    questionVariants: [
+      'đặt lịch như thế nào',
+      'đặt lịch cần gì',
+      'thủ tục đặt lịch',
+      'cần cung cấp thông tin gì để đặt lịch',
+      'đặt hẹn khám cần gì',
+      'đặt lịch qua điện thoại được không',
+      'cần mang gì khi đến khám',
+      'khi đến khám cần gì',
+    ],
+    answerText:
+      'Dạ để đặt lịch tại DoctorCheck, anh/chị chỉ cần cung cấp họ tên, số điện thoại, ngày và giờ muốn khám ạ. Phòng khám sẽ nhắn tin xác nhận lịch hẹn trước 1 ngày ạ. Khi đến khám anh/chị mang theo CMND hoặc CCCD và thẻ BHYT nếu có ạ.',
+    answerMale:
+      'Dạ để đặt lịch tại DoctorCheck, anh chỉ cần cung cấp họ tên, số điện thoại, ngày và giờ muốn khám ạ. Phòng khám sẽ nhắn tin xác nhận lịch hẹn trước 1 ngày ạ. Khi đến khám anh mang theo CMND/CCCD và thẻ BHYT nếu có ạ.',
+    answerFemale:
+      'Dạ để đặt lịch tại DoctorCheck, chị chỉ cần cung cấp họ tên, số điện thoại, ngày và giờ muốn khám ạ. Phòng khám sẽ nhắn tin xác nhận lịch hẹn trước 1 ngày ạ. Khi đến khám chị mang theo CMND/CCCD và thẻ BHYT nếu có ạ.',
+    confidenceThreshold: 0.65,
+  },
+  {
+    title: 'Hủy hoặc đổi lịch khám DoctorCheck',
+    category: 'dat_lich',
+    tags: ['dat_lich', 'huy_lich', 'doi_lich'],
+    questionVariants: [
+      'hủy lịch khám',
+      'đổi lịch khám',
+      'dời lịch',
+      'không đi khám được',
+      'muốn hủy lịch',
+      'muốn đổi giờ khám',
+      'thay đổi lịch hẹn',
+    ],
+    answerText:
+      'Dạ anh/chị có thể hủy hoặc đổi lịch khám bằng cách gọi lại số tổng đài DoctorCheck hoặc nhắn tin theo số trên tin nhắn xác nhận lịch ạ. Vui lòng báo trước ít nhất 2 tiếng trước giờ khám ạ.',
+    confidenceThreshold: 0.65,
+  },
 ]
 
 const SEED_USERS = [

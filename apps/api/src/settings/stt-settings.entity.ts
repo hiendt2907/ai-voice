@@ -5,6 +5,9 @@ export class SttSettings {
   @PrimaryColumn({ default: 'default' })
   id: string
 
+  @Column({ default: 'faster_whisper' })
+  engine: string
+
   @Column({ default: 'small' })
   modelSize: string
 
