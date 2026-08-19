@@ -1,0 +1,16 @@
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/.git
+**/.venv
+services/voice
+docs
+deploy
+samples
+scripts
+schemas
+*.xml
+*.md
+.env
+.env.example

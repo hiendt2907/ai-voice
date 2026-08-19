@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Secret-scanning pre-commit hook (Phase 0 / defect D5).
+#
+# Blocks a commit when a staged change introduces something that looks like a
+# raw credential. Deliberately simple: it must catch the real case that already
+# happened (an ElevenLabs `sk_...` key dropped in a file at the repo root)
+# without needing any extra tooling installed.
+#
+# Install (per clone — .git/hooks is not versioned):
+#     git config core.hooksPath .githooks
+#
+# Bypass for a verified false positive:
+#     SKIP_SECRET_SCAN=1 git commit ...
+#   or add an inline `pragma: allowlist secret` comment on the offending line.
+
+set -uo pipefail
+
+if [ "${SKIP_SECRET_SCAN:-0}" = "1" ]; then
+    echo "pre-commit: secret scan skipped (SKIP_SECRET_SCAN=1)"
+    exit 0
+fi
+
+# Patterns are extended-regex, one "name<TAB>regex" per line.
+PATTERNS=$(
+    cat <<'EOF'
+ElevenLabs/Stripe-style key	sk_[A-Za-z0-9]{32,}
+OpenAI project key	sk-(proj-)?[A-Za-z0-9_-]{32,}
+Anthropic API key	sk-ant-[A-Za-z0-9_-]{32,}
+AWS access key id	(A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}
+AWS secret access key	aws_secret_access_key.{0,4}[A-Za-z0-9/+=]{40}
+GitHub token	gh[pousr]_[A-Za-z0-9]{36,}
+Google API key	AIza[A-Za-z0-9_-]{35}
+Slack token	xox[abprs]-[A-Za-z0-9-]{10,}
+Telegram bot token	[0-9]{8,10}:AA[A-Za-z0-9_-]{33}
+Private key block	-----BEGIN [A-Z ]*PRIVATE KEY-----
+JWT	eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}
+EOF
+)
+
+# Only added lines of staged text content are scanned.
+DIFF=$(git diff --cached --no-color --diff-filter=ACM -U0 -- . ':(exclude).githooks/pre-commit')
+[ -z "$DIFF" ] && exit 0
+
+ADDED=$(printf '%s\n' "$DIFF" | grep '^+' | grep -v '^+++' | grep -v 'pragma: allowlist secret')
+[ -z "$ADDED" ] && exit 0
+
+FOUND=0
+while IFS=$'\t' read -r name regex; do
+    [ -z "${regex:-}" ] && continue
+    HITS=$(printf '%s\n' "$ADDED" | grep -nE -e "$regex" || true)
+    if [ -n "$HITS" ]; then
+        if [ "$FOUND" -eq 0 ]; then
+            echo "" >&2
+            echo "COMMIT BLOCKED — possible secret in staged changes:" >&2
+            FOUND=1
+        fi
+        echo "" >&2
+        echo "  [$name]" >&2
+        printf '%s\n' "$HITS" | head -5 | sed 's/^/    /' >&2
+    fi
+done <<<"$PATTERNS"
+
+# Any staged file whose name looks like a credential file.
+NAME_HITS=$(git diff --cached --name-only --diff-filter=ACM |
+    grep -Ei '(^|/)(\.env(\..*)?|.*_key|.*\.key|.*\.pem|credentials(\.json)?)$' || true)
+if [ -n "$NAME_HITS" ]; then
+    if [ "$FOUND" -eq 0 ]; then
+        echo "" >&2
+        echo "COMMIT BLOCKED — credential-looking file staged:" >&2
+        FOUND=1
+    fi
+    echo "" >&2
+    echo "  [credential filename]" >&2
+    printf '%s\n' "$NAME_HITS" | sed 's/^/    /' >&2
+fi
+
+if [ "$FOUND" -eq 1 ]; then
+    cat >&2 <<'MSG'
+
+Remove the secret, move it to an env var / Vault, then commit again.
+If this is genuinely not a secret:
+  - append "pragma: allowlist secret" to the line, or
+  - re-run with SKIP_SECRET_SCAN=1 git commit ...
+MSG
+    exit 1
+fi
+
+exit 0
