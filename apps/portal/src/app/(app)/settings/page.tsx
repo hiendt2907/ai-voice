@@ -9,13 +9,15 @@ import { NotifySection } from './NotifySection'
 import { VoiceWorkerSection } from './VoiceWorkerSection'
 import { DoctorCheckSection } from './DoctorCheckSection'
 import { VoiceProfilesSection } from './VoiceProfilesSection'
+import { ConversationSection } from './ConversationSection'
 
-type Tab = 'cloudfone' | 'doctorcheck' | 'ai' | 'stt' | 'tts' | 'voices' | 'notify' | 'voice-worker'
+type Tab = 'cloudfone' | 'doctorcheck' | 'ai' | 'conversation' | 'stt' | 'tts' | 'voices' | 'notify' | 'voice-worker'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'cloudfone', label: 'CloudFone' },
   { id: 'doctorcheck', label: 'DoctorCheck' },
   { id: 'ai', label: 'AI / LLM' },
+  { id: 'conversation', label: 'Conversation' },
   { id: 'stt', label: 'STT' },
   { id: 'tts', label: 'TTS' },
   { id: 'voices', label: 'Voice Profiles' },
@@ -58,6 +60,7 @@ export default function SettingsPage() {
       {activeTab === 'cloudfone' && <CloudFoneSection />}
       {activeTab === 'doctorcheck' && <DoctorCheckSection />}
       {activeTab === 'ai' && <AiSection />}
+      {activeTab === 'conversation' && <ConversationSection />}
       {activeTab === 'stt' && <SttSection />}
       {activeTab === 'tts' && <TtsSection />}
       {activeTab === 'voices' && <VoiceProfilesSection />}

@@ -26,6 +26,17 @@ interface SlotMap {
   [key: string]: string
 }
 
+interface TurnMeta {
+  turn: number
+  intent: string | null
+  slotsNew: SlotMap
+  stepFrom: string
+  stepTo: string
+  nluConfidence: number
+  nluTier: string
+  filler: string
+}
+
 const VOICE_WS_URL =
   typeof window !== 'undefined'
     ? (process.env.NEXT_PUBLIC_VOICE_WS_URL ?? 'ws://localhost:8000')
@@ -83,6 +94,7 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [slots, setSlots] = useState<SlotMap>({})
+  const [turnHistory, setTurnHistory] = useState<TurnMeta[]>([])
   const [currentStep, setCurrentStep] = useState<string>('')
   const [turn, setTurn] = useState(0)
   const [errorMsg, setErrorMsg] = useState('')
@@ -92,6 +104,15 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
   const [useRealTts, setUseRealTts] = useState(true)
   const [ttsEngine, setTtsEngine] = useState<string>('elevenlabs')
   const [switchingEngine, setSwitchingEngine] = useState(false)
+  const [aiModel, setAiModel] = useState<string>('qwen2.5:latest')
+  const [switchingModel, setSwitchingModel] = useState(false)
+  const [aiSettings, setAiSettings] = useState<Record<string, unknown>>({
+    ollamaBaseUrl: 'http://localhost:11434/v1',
+    ollamaModel: 'qwen2.5:latest',
+    nluTimeoutMs: 800,
+    responseTimeoutMs: 2000,
+    fallbackToSubstring: true,
+  })
   const [hasSpeechRecognition, setHasSpeechRecognition] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -113,11 +134,17 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
 
   useEffect(() => {
     setHasSpeechRecognition('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
-    // Load current TTS engine from settings
     void fetch('/api/v1/settings/tts').then(async (r) => {
       if (r.ok) {
         const d = await r.json() as { engine?: string }
         if (d.engine) setTtsEngine(d.engine)
+      }
+    })
+    void fetch('/api/v1/settings/ai').then(async (r) => {
+      if (r.ok) {
+        const { id: _id, updatedBy: _ub, updatedAt: _ua, ...d } = await r.json() as Record<string, unknown>
+        if (Object.keys(d).length > 0) setAiSettings((prev) => ({ ...prev, ...d }))
+        if (d.ollamaModel) setAiModel(d.ollamaModel as string)
       }
     })
   }, [])
@@ -186,6 +213,22 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
         )
       }
 
+    } else if (event === 'turn_meta') {
+      const meta: TurnMeta = {
+        turn: (msg.turn as number) ?? 0,
+        intent: (msg.intent as string | null) ?? null,
+        slotsNew: (msg.slots_new as SlotMap) ?? {},
+        stepFrom: (msg.step_from as string) ?? '',
+        stepTo: (msg.step_to as string) ?? '',
+        nluConfidence: (msg.nlu_confidence as number) ?? 0,
+        nluTier: (msg.nlu_tier as string) ?? '',
+        filler: (msg.filler as string) ?? '',
+      }
+      setTurnHistory((prev) => [...prev, meta])
+      if (Object.keys(meta.slotsNew).length > 0) {
+        setSlots((prev) => ({ ...prev, ...meta.slotsNew }))
+      }
+
     } else if (event === 'hangup') {
       flushPendingBeat()
       setWsStatus('hangup')
@@ -226,6 +269,7 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
     setErrorMsg('')
     setAudioMode(false)
     setAiSpeaking(false)
+    setTurnHistory([])
     pendingBeatRef.current = ''
 
     // Init AudioContext on user gesture (required by browser autoplay policy)
@@ -388,13 +432,19 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
               onChange={(e) => {
                 const engine = e.target.value
                 setSwitchingEngine(true)
-                void fetch('/api/v1/settings/tts', {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ engine, elevenlabsApiKey: '***' }),
-                }).then(() => {
-                  setTtsEngine(engine)
-                }).finally(() => setSwitchingEngine(false))
+                void (async () => {
+                  try {
+                    const cur = await fetch('/api/v1/settings/tts').then((r) => r.ok ? r.json() as Promise<Record<string, unknown>> : {})
+                    await fetch('/api/v1/settings/tts', {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ ...cur, engine }),
+                    })
+                    setTtsEngine(engine)
+                  } finally {
+                    setSwitchingEngine(false)
+                  }
+                })()
               }}
               className={[
                 'text-xs border rounded-lg px-2 py-1 bg-white text-[var(--color-text)] border-[var(--color-border)]',
@@ -407,6 +457,39 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
               <option value="edge-tts">edge-tts (miễn phí)</option>
               <option value="gwen-tts">gwen-tts (local)</option>
               <option value="disabled">Tắt TTS</option>
+            </select>
+
+            {/* AI model switcher */}
+            <select
+              disabled={isRunning || switchingModel}
+              value={aiModel}
+              onChange={(e) => {
+                const model = e.target.value
+                setSwitchingModel(true)
+                void fetch('/api/v1/settings/ai', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    ...aiSettings,
+                    ollamaModel: model,
+                  }),
+                }).then(() => {
+                  setAiModel(model)
+                  setAiSettings((prev) => ({ ...prev, ollamaModel: model }))
+                }).finally(() => setSwitchingModel(false))
+              }}
+              className={[
+                'text-xs border rounded-lg px-2 py-1 bg-white text-[var(--color-text)] border-[var(--color-border)]',
+                'focus:outline-none focus:border-[var(--color-accent)]',
+                (isRunning || switchingModel) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
+              ].join(' ')}
+              title="Chọn AI model — lưu ngay và reload voice worker"
+            >
+              <option value="qwen2.5:latest">qwen2.5</option>
+              <option value="qwen2.5:7b">qwen2.5:7b</option>
+              <option value="llama3.2:latest">llama3.2</option>
+              <option value="gemma3:latest">gemma3</option>
+              <option value="claude-haiku-4-5-20251001">claude haiku</option>
             </select>
 
             {/* Real TTS toggle */}
@@ -545,54 +628,50 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
         </div>
       </div>
 
-      {/* ── Right: Metadata ─────────────────────────────────── */}
-      <div className="w-64 shrink-0 flex flex-col gap-4">
+      {/* ── Right: Workflow ─────────────────────────────────── */}
+      <div className="w-72 shrink-0 flex flex-col gap-3 overflow-y-auto">
         {/* FSM State */}
         <div className="rounded-2xl border border-[var(--color-border)] bg-white p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] mb-3">Trạng thái FSM</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] mb-3">Trạng thái</p>
           <div className="space-y-2">
             <MetaRow label="Turn" value={turn > 0 ? String(turn) : '—'} />
-            <MetaRow label="Step hiện tại" value={currentStep || '—'} mono />
-            <MetaRow label="Kết nối" value={wsStatus} />
-            <MetaRow label="Chế độ" value={audioMode ? '🔊 Audio' : '💬 Text'} />
+            <MetaRow label="Step" value={currentStep || '—'} mono />
+            <MetaRow label="WS" value={wsStatus} />
+            <MetaRow label="Mode" value={audioMode ? 'Audio' : 'Text'} />
           </div>
         </div>
 
-        {/* Slots */}
-        <div className="rounded-2xl border border-[var(--color-border)] bg-white p-4 flex-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] mb-3">Slots đã thu thập</p>
-          {Object.keys(slots).length === 0 ? (
-            <p className="text-xs text-[var(--color-text-muted)]">Chưa có slot nào</p>
+        {/* NLU Turn History */}
+        <div className="rounded-2xl border border-[var(--color-border)] bg-white p-4 flex-1 min-h-0">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] mb-3">NLU / FSM Workflow</p>
+          {turnHistory.length === 0 ? (
+            <p className="text-xs text-[var(--color-text-muted)]">Chưa có turn nào</p>
           ) : (
-            <div className="space-y-1.5">
-              {Object.entries(slots).map(([k, v]) => (
-                <div key={k} className="flex items-start gap-1.5 text-xs">
-                  <span className="font-mono text-[var(--color-text-muted)] shrink-0">{k}:</span>
-                  <span className="text-[var(--color-text)] break-all">{v}</span>
-                </div>
+            <div className="space-y-3 overflow-y-auto max-h-64">
+              {turnHistory.slice(-8).map((m) => (
+                <TurnMetaCard key={m.turn} meta={m} />
               ))}
             </div>
           )}
         </div>
 
-        {/* Hint */}
-        <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-overlay)] p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] mb-2">Hướng dẫn</p>
-          <ul className="text-xs text-[var(--color-text-muted)] space-y-1.5 list-none">
-            {audioMode ? (
-              <>
-                <li>• <strong>Real TTS</strong> bật — ElevenLabs/gwen-tts đang chạy</li>
-                <li>• Audio phát qua loa của trình duyệt</li>
-                <li>• Dùng mic để nói tiếng Việt tự nhiên</li>
-              </>
-            ) : (
-              <>
-                <li>• <strong>Text mode</strong> — nhận beat text, không audio</li>
-                <li>• Bật toggle <strong>Real TTS</strong> trên đầu để nghe ElevenLabs</li>
-                <li>• Cần <code className="bg-[var(--color-surface)] px-1 rounded">ELEVENLABS_API_KEY</code> trong .env</li>
-              </>
-            )}
-          </ul>
+        {/* Slots */}
+        <div className="rounded-2xl border border-[var(--color-border)] bg-white p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] mb-3">Slots</p>
+          {Object.keys(slots).filter((k) => !k.startsWith('today') && !k.startsWith('tomorrow')).length === 0 ? (
+            <p className="text-xs text-[var(--color-text-muted)]">Chưa có slot nào</p>
+          ) : (
+            <div className="space-y-1.5">
+              {Object.entries(slots)
+                .filter(([k]) => !k.startsWith('today') && !k.startsWith('tomorrow'))
+                .map(([k, v]) => (
+                  <div key={k} className="flex items-start gap-1.5 text-xs">
+                    <span className="font-mono text-[var(--color-text-muted)] shrink-0">{k}:</span>
+                    <span className="text-[var(--color-text)] break-all font-medium">{v}</span>
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -645,12 +724,85 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       ].join(' ')}>
         <p>{message.text}</p>
         {isAI && (message.stepId || message.ttfa !== undefined) && (
-          <p className="text-xs mt-1 opacity-50 font-mono">
-            {message.stepId && `step: ${message.stepId}`}
-            {message.ttfa !== undefined && ` · TTFA: ${message.ttfa}ms`}
+          <p className="text-xs mt-1 font-mono opacity-60">
+            {message.stepId && <span>{message.stepId}</span>}
+            {message.ttfa !== undefined && (
+              <span className={[
+                'ml-1',
+                message.ttfa < 500 ? 'text-[oklch(45%_0.16_145)]' :
+                message.ttfa < 1000 ? 'text-[oklch(52%_0.18_50)]' :
+                'text-[oklch(50%_0.18_25)]',
+              ].join('')}>
+                {' · '}{message.ttfa}ms
+              </span>
+            )}
           </p>
         )}
       </div>
+    </div>
+  )
+}
+
+function TurnMetaCard({ meta }: { meta: TurnMeta }) {
+  const tierColor: Record<string, string> = {
+    confident: 'text-[oklch(45%_0.16_145)] bg-[oklch(96%_0.03_145)]',
+    clarify:   'text-[oklch(52%_0.18_50)]  bg-[oklch(96%_0.03_50)]',
+    handoff:   'text-[oklch(50%_0.18_25)]  bg-[oklch(97%_0.02_25)]',
+  }
+  const confColor =
+    meta.nluConfidence >= 0.8 ? 'text-[oklch(45%_0.16_145)]' :
+    meta.nluConfidence >= 0.6 ? 'text-[oklch(52%_0.18_50)]' :
+    'text-[oklch(50%_0.18_25)]'
+
+  return (
+    <div className="text-xs border border-[var(--color-border)] rounded-xl p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[var(--color-text-muted)]">Turn {meta.turn}</span>
+        {meta.nluTier && (
+          <span className={['px-1.5 py-0.5 rounded-full font-medium text-[10px]', tierColor[meta.nluTier] ?? 'text-[var(--color-text-muted)]'].join(' ')}>
+            {meta.nluTier}
+          </span>
+        )}
+      </div>
+
+      {/* Intent */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-[var(--color-text-muted)] shrink-0">intent:</span>
+        <span className="font-mono font-semibold text-[var(--color-text)] truncate">
+          {meta.intent ?? <span className="opacity-40">null</span>}
+        </span>
+        {meta.nluConfidence > 0 && (
+          <span className={['ml-auto shrink-0 font-mono', confColor].join(' ')}>
+            {(meta.nluConfidence * 100).toFixed(0)}%
+          </span>
+        )}
+      </div>
+
+      {/* Step transition */}
+      <div className="flex items-center gap-1 flex-wrap">
+        <span className="font-mono bg-[var(--color-surface)] px-1.5 py-0.5 rounded text-[10px] text-[var(--color-text-muted)]">
+          {meta.stepFrom}
+        </span>
+        {meta.stepTo !== meta.stepFrom && (
+          <>
+            <span className="text-[var(--color-text-muted)]">→</span>
+            <span className="font-mono bg-[oklch(96%_0.03_145)] px-1.5 py-0.5 rounded text-[10px] text-[oklch(45%_0.16_145)]">
+              {meta.stepTo}
+            </span>
+          </>
+        )}
+      </div>
+
+      {/* New slots */}
+      {Object.keys(meta.slotsNew).length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {Object.entries(meta.slotsNew).map(([k, v]) => (
+            <span key={k} className="inline-flex items-center gap-0.5 bg-[oklch(96%_0.03_250)] text-[oklch(45%_0.16_250)] px-1.5 py-0.5 rounded-full text-[10px]">
+              <span className="opacity-60">{k}=</span>{v}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

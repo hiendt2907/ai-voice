@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Volume2, Eye, EyeOff } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Volume2, Eye, EyeOff, RefreshCw } from 'lucide-react'
 import { Field, SelectField, NumberField, SliderField, ToggleField } from './Field'
 import { SectionFooter, SectionSkeleton, StatusDot, Meta } from './CloudFoneSection'
 
@@ -17,8 +17,17 @@ interface TtsSettings {
   elevenlabsSimilarityBoost: number
   elevenlabsStyleExaggeration: number
   elevenlabsUseSpeakerBoost: boolean
+  engineFallbackOrder: string[]
+  elevenlabsDailyCharQuota: number
+  circuitBreakerFailures: number
+  circuitBreakerResetSecs: number
   updatedBy: string | null
   updatedAt: string
+}
+
+interface TtsHealth {
+  engines: Record<string, 'closed' | 'open' | 'half-open'>
+  quota: { used: number; cap: number; remaining: number; date: string }
 }
 
 type SaveStatus = 'idle' | 'saving' | 'ok' | 'error'
@@ -56,6 +65,18 @@ function getVoiceOptions(engine: string) {
   return KOKORO_VOICES
 }
 
+const ENGINE_NAMES: Record<string, string> = {
+  elevenlabs: 'ElevenLabs',
+  'edge-tts': 'edge-tts',
+  local: 'Local',
+}
+
+const CIRCUIT_DOT_COLOR: Record<string, string> = {
+  closed: 'bg-emerald-500',
+  'half-open': 'bg-amber-400',
+  open: 'bg-red-500',
+}
+
 const DEFAULT_FORM: TtsSettings = {
   engine: 'elevenlabs',
   voice: 'vi-VN-HoaiMyNeural',
@@ -68,6 +89,10 @@ const DEFAULT_FORM: TtsSettings = {
   elevenlabsSimilarityBoost: 0.75,
   elevenlabsStyleExaggeration: 0.3,
   elevenlabsUseSpeakerBoost: true,
+  engineFallbackOrder: ['elevenlabs', 'edge-tts', 'local'],
+  elevenlabsDailyCharQuota: 0,
+  circuitBreakerFailures: 3,
+  circuitBreakerResetSecs: 300,
   updatedBy: null,
   updatedAt: '',
 }
@@ -79,8 +104,8 @@ export function TtsSection() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [showKey, setShowKey] = useState(false)
-
   const [hasExistingKey, setHasExistingKey] = useState(false)
+  const [health, setHealth] = useState<TtsHealth | null>(null)
 
   useEffect(() => {
     void (async () => {
@@ -88,7 +113,6 @@ export function TtsSection() {
         const res = await fetch('/api/v1/settings/tts')
         if (res.ok) {
           const data = (await res.json()) as TtsSettings
-          // Don't pre-fill '***' into the input — user must type new key explicitly
           setHasExistingKey(data.elevenlabsApiKey === '***')
           setForm({ ...DEFAULT_FORM, ...data, elevenlabsApiKey: '' })
           setMeta({ updatedBy: data.updatedBy, updatedAt: data.updatedAt })
@@ -98,6 +122,23 @@ export function TtsSection() {
       }
     })()
   }, [])
+
+  const refreshHealth = useCallback(() => {
+    void (async () => {
+      try {
+        const res = await fetch('/api/v1/settings/tts/health')
+        if (res.ok) setHealth((await res.json()) as TtsHealth)
+      } catch {
+        // non-fatal
+      }
+    })()
+  }, [])
+
+  useEffect(() => {
+    refreshHealth()
+    const timer = setInterval(refreshHealth, 30_000)
+    return () => clearInterval(timer)
+  }, [refreshHealth])
 
   function set<K extends keyof TtsSettings>(field: K, value: TtsSettings[K]) {
     setForm((f) => {
@@ -120,7 +161,6 @@ export function TtsSection() {
         voice: form.voice,
         sampleRate: form.sampleRate,
         speedFactor: form.speedFactor,
-        // Send '***' sentinel when user left field blank (keep existing key)
         elevenlabsApiKey: form.elevenlabsApiKey.trim() === '' ? '***' : form.elevenlabsApiKey,
         elevenlabsVoiceId: form.elevenlabsVoiceId,
         elevenlabsModelId: form.elevenlabsModelId,
@@ -128,6 +168,10 @@ export function TtsSection() {
         elevenlabsSimilarityBoost: form.elevenlabsSimilarityBoost,
         elevenlabsStyleExaggeration: form.elevenlabsStyleExaggeration,
         elevenlabsUseSpeakerBoost: form.elevenlabsUseSpeakerBoost,
+        engineFallbackOrder: form.engineFallbackOrder,
+        elevenlabsDailyCharQuota: form.elevenlabsDailyCharQuota,
+        circuitBreakerFailures: form.circuitBreakerFailures,
+        circuitBreakerResetSecs: form.circuitBreakerResetSecs,
       }
       const res = await fetch('/api/v1/settings/tts', {
         method: 'PUT',
@@ -283,6 +327,109 @@ export function TtsSection() {
               />
             </div>
           </>
+        )}
+
+        <div className="pt-2 border-t border-[var(--color-border)]">
+          <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wide mb-4">Thứ tự dự phòng</p>
+          <div className="space-y-3">
+            {(['0', '1', '2'] as const).map((idx) => (
+              <div key={idx} className="flex items-center gap-3">
+                <span className="text-xs text-[var(--color-text-muted)] w-16 shrink-0">
+                  {idx === '0' ? 'Primary' : idx === '1' ? 'Fallback 1' : 'Fallback 2'}
+                </span>
+                <select
+                  value={form.engineFallbackOrder[Number(idx)] ?? ''}
+                  onChange={(e) => {
+                    const next = [...form.engineFallbackOrder]
+                    next[Number(idx)] = e.target.value
+                    set('engineFallbackOrder', next)
+                  }}
+                  className="input flex-1"
+                >
+                  <option value="elevenlabs">ElevenLabs</option>
+                  <option value="edge-tts">edge-tts</option>
+                  <option value="local">Local / gwen-tts</option>
+                </select>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="pt-2 border-t border-[var(--color-border)]">
+          <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wide mb-4">ElevenLabs Quota</p>
+          <NumberField
+            label="Daily Char Quota"
+            hint="Giới hạn ký tự/ngày. 0 = không giới hạn. Dùng để tránh vượt quota khi nhiều cuộc gọi."
+            value={form.elevenlabsDailyCharQuota}
+            onChange={(v) => set('elevenlabsDailyCharQuota', v)}
+            min={0}
+            step={10000}
+          />
+        </div>
+
+        <div className="pt-2 border-t border-[var(--color-border)]">
+          <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wide mb-4">Circuit Breaker</p>
+          <div className="grid grid-cols-2 gap-4">
+            <NumberField
+              label="Ngưỡng lỗi mở circuit"
+              hint="Số lần thất bại liên tiếp để tạm dừng engine"
+              value={form.circuitBreakerFailures}
+              onChange={(v) => set('circuitBreakerFailures', v)}
+              min={1}
+              max={20}
+            />
+            <NumberField
+              label="Reset sau (giây)"
+              hint="Thời gian chờ trước khi thử lại engine bị lỗi"
+              value={form.circuitBreakerResetSecs}
+              onChange={(v) => set('circuitBreakerResetSecs', v)}
+              min={30}
+              step={30}
+            />
+          </div>
+        </div>
+
+        {health && (
+          <div className="pt-2 border-t border-[var(--color-border)]">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wide">Trạng thái Engine</p>
+              <button
+                type="button"
+                onClick={refreshHealth}
+                className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
+                title="Refresh"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="space-y-2">
+              {Object.entries(health.engines).map(([name, status]) => (
+                <div key={name} className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className={['w-2 h-2 rounded-full', CIRCUIT_DOT_COLOR[status] ?? 'bg-gray-400'].join(' ')} />
+                    <span className="font-medium text-[var(--color-text)]">{ENGINE_NAMES[name] ?? name}</span>
+                  </div>
+                  <span className="text-[var(--color-text-muted)] capitalize">{status}</span>
+                </div>
+              ))}
+              {health.quota.cap > 0 && (
+                <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="text-[var(--color-text-muted)]">ElevenLabs quota {health.quota.date}</span>
+                    <span className="font-mono text-[var(--color-text)]">
+                      {health.quota.used.toLocaleString()} / {health.quota.cap.toLocaleString()} chars
+                    </span>
+                  </div>
+                  <div className="w-full bg-[var(--color-surface-overlay)] rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-[var(--color-accent)] transition-all"
+                      style={{ width: `${Math.min(100, (health.quota.used / health.quota.cap) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
         <Meta updatedAt={meta?.updatedAt} updatedBy={meta?.updatedBy} />

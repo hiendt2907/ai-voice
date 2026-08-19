@@ -5,9 +5,11 @@ import { Settings2, Save, CheckCircle2, AlertCircle, Loader2, Wifi, Zap } from '
 import { Field } from './Field'
 
 interface CloudFoneSettings {
-  odsUrl: string
-  apiKey: string
-  tenantId: string
+  socket: string
+  port: string
+  realm: string
+  user: string
+  password: string
   updatedBy: string | null
   updatedAt: string
 }
@@ -15,8 +17,10 @@ interface CloudFoneSettings {
 type SaveStatus = 'idle' | 'saving' | 'ok' | 'error'
 type TestStatus = 'idle' | 'testing' | 'ok' | 'error'
 
+const EMPTY_FORM = { socket: '', port: '', realm: '', user: '', password: '' }
+
 export function CloudFoneSection() {
-  const [form, setForm] = useState({ odsUrl: '', apiKey: '', tenantId: '' })
+  const [form, setForm] = useState(EMPTY_FORM)
   const [meta, setMeta] = useState<Pick<CloudFoneSettings, 'updatedBy' | 'updatedAt'> | null>(null)
   const [loading, setLoading] = useState(true)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
@@ -30,7 +34,13 @@ export function CloudFoneSection() {
         const res = await fetch('/api/v1/settings/cloudfone')
         if (res.ok) {
           const data = (await res.json()) as CloudFoneSettings
-          setForm({ odsUrl: data.odsUrl, apiKey: data.apiKey, tenantId: data.tenantId })
+          setForm({
+            socket: data.socket,
+            port: data.port,
+            realm: data.realm,
+            user: data.user,
+            password: data.password,
+          })
           setMeta({ updatedBy: data.updatedBy, updatedAt: data.updatedAt })
         }
       } finally {
@@ -82,7 +92,7 @@ export function CloudFoneSection() {
     }
   }
 
-  const isConfigured = form.odsUrl.startsWith('wss://') && form.apiKey.length > 0 && form.tenantId.length > 0
+  const isConfigured = form.socket.length > 0 && form.user.length > 0
 
   if (loading) return <SectionSkeleton />
 
@@ -94,17 +104,51 @@ export function CloudFoneSection() {
             <Settings2 className="w-4 h-4 text-[var(--color-accent)]" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-[var(--color-text)]">CloudFone / ODS</p>
-            <p className="text-xs text-[var(--color-text-muted)]">Kết nối WebSocket tổng đài ảo</p>
+            <p className="text-sm font-semibold text-[var(--color-text)]">CloudFone</p>
+            <p className="text-xs text-[var(--color-text-muted)]">Kết nối API tổng đài</p>
           </div>
         </div>
         <StatusDot ok={isConfigured} label={isConfigured ? 'Đã cấu hình' : 'Chưa cấu hình'} />
       </div>
 
       <div className="px-6 py-6 space-y-5">
-        <Field label="ODS WebSocket URL" hint="Format: wss://ods.cloudfone.vn/ws — URL do CloudFone cung cấp, bắt đầu bằng wss://" value={form.odsUrl} onChange={(v) => set('odsUrl', v)} placeholder="wss://ods.cloudfone.vn/ws" icon={<Wifi className="w-3.5 h-3.5" />} />
-        <Field label="API Key" hint="Service key để xác thực với ODS gateway — lấy trong trang quản trị CloudFone" value={form.apiKey} onChange={(v) => set('apiKey', v)} placeholder="xxxxxxxxxxxxxxxxxxxxxxxx" type="password" />
-        <Field label="Tenant ID" hint="Mã tenant / chi nhánh — thường là ký tự ngắn như 'dc' hoặc 'doctorcheck'" value={form.tenantId} onChange={(v) => set('tenantId', v)} placeholder="dc" />
+        <Field
+          label="Socket"
+          hint="Địa chỉ IP hoặc hostname của CloudFone server"
+          value={form.socket}
+          onChange={(v) => set('socket', v)}
+          placeholder="192.168.1.100"
+          icon={<Wifi className="w-3.5 h-3.5" />}
+        />
+        <Field
+          label="Port"
+          hint="Cổng kết nối — mặc định thường là 5060 (SIP)"
+          value={form.port}
+          onChange={(v) => set('port', v)}
+          placeholder="5060"
+        />
+        <Field
+          label="Realm"
+          hint="SIP realm / domain do CloudFone cung cấp"
+          value={form.realm}
+          onChange={(v) => set('realm', v)}
+          placeholder="cloudfone.vn"
+        />
+        <Field
+          label="User"
+          hint="Tên đăng nhập SIP"
+          value={form.user}
+          onChange={(v) => set('user', v)}
+          placeholder="1000"
+        />
+        <Field
+          label="Password"
+          hint="Mật khẩu xác thực SIP"
+          value={form.password}
+          onChange={(v) => set('password', v)}
+          placeholder="••••••••••••••••"
+          type="password"
+        />
         <Meta updatedAt={meta?.updatedAt} updatedBy={meta?.updatedBy} />
       </div>
 
@@ -184,7 +228,7 @@ export function SectionSkeleton() {
         <div className="h-4 w-32 bg-[var(--color-border)] rounded animate-pulse" />
       </div>
       <div className="px-6 py-6 space-y-5">
-        {[1, 2, 3].map((i) => (
+        {[1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="space-y-1.5">
             <div className="h-3 w-24 bg-[var(--color-border)] rounded animate-pulse" />
             <div className="h-9 w-full bg-[var(--color-border)] rounded-lg animate-pulse" />
