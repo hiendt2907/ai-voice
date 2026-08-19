@@ -1,0 +1,10 @@
+[
+  {
+    "engine": "elevenlabs_scribe",
+    "label": "ElevenLabs Scribe v2 (cloud)",
+    "apple_silicon_accelerated": false,
+    "available": false,
+    "skip_reason": "ElevenLabs Scribe request failed: Client error '400 Bad Request' for url 'https://api.elevenlabs.io/v1/speech-to-text'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+    "measurements": []
+  }
+]

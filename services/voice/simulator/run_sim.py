@@ -109,6 +109,25 @@ Examples:
         metavar="SECONDS",
         help="Seconds to wait after last beat before assuming server ready (default: 0.35)",
     )
+    parser.add_argument(
+        "--initial-wait",
+        type=float,
+        default=8.0,
+        metavar="SECONDS",
+        help="Max seconds to wait for the first beat after an utterance — accommodates LLM latency (default: 8.0)",
+    )
+    parser.add_argument(
+        "--play-audio",
+        action="store_true",
+        default=False,
+        help="Play TTS audio through speakers as it arrives (requires sounddevice)",
+    )
+    parser.add_argument(
+        "--emotion",
+        default=None,
+        metavar="LABEL",
+        help="Inject caller emotion into every utterance (happy/sad/angry/frustrated/fearful/disgusted/surprised)",
+    )
     return parser.parse_args()
 
 
@@ -121,6 +140,9 @@ async def main() -> None:
         utterance_delay_s=args.delay,
         ttfa_warn_ms=args.ttfa_warn,
         quiet_timeout_s=args.quiet_timeout,
+        initial_wait_s=args.initial_wait,
+        play_audio=args.play_audio,
+        emotion=args.emotion,
     )
 
     await sim.run(

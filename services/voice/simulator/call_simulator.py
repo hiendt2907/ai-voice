@@ -27,6 +27,18 @@ import websockets
 from audio.codec import pcm_to_ulaw
 from cloudfone.protocol import InboundEvent, OutboundEvent
 
+_PLAYBACK_SR = 8000  # PCM from voice worker is always int16 @ 8kHz
+
+
+def _play_pcm(pcm_bytes: bytes) -> None:
+    """Play raw int16 PCM at 8kHz through the default output device."""
+    try:
+        import sounddevice as sd  # noqa: PLC0415
+        samples = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+        sd.play(samples, samplerate=_PLAYBACK_SR, blocking=True)
+    except Exception as exc:
+        print(f"  {_DIM}[audio playback error: {exc}]{_RESET}")
+
 # ANSI color codes
 _CYAN = "\033[36m"
 _YELLOW = "\033[33m"
@@ -38,7 +50,8 @@ _DIM = "\033[2m"
 _RESET = "\033[0m"
 
 _TTFA_WARN_DEFAULT_MS = 500.0
-_QUIET_TIMEOUT_S = 0.35  # wait this long after last beat before assuming server is ready
+_QUIET_TIMEOUT_S = 1.5   # wait after last beat; >1s needed to cover NLU latency + leftover TTS audio
+_INITIAL_WAIT_S = 8.0    # max wait for the FIRST beat after an utterance (accommodates LLM latency)
 
 
 @dataclass
@@ -75,13 +88,19 @@ class CallSimulator:
         utterance_delay_s: float = 1.0,
         ttfa_warn_ms: float = _TTFA_WARN_DEFAULT_MS,
         quiet_timeout_s: float = _QUIET_TIMEOUT_S,
+        initial_wait_s: float = _INITIAL_WAIT_S,
         verbose: bool = True,
+        play_audio: bool = False,
+        emotion: str | None = None,
     ) -> None:
         self.ws_url = ws_url
         self.utterance_delay_s = utterance_delay_s
         self.ttfa_warn_ms = ttfa_warn_ms
         self.quiet_timeout_s = quiet_timeout_s
+        self.initial_wait_s = initial_wait_s
         self.verbose = verbose
+        self.play_audio = play_audio
+        self.emotion = emotion  # injected into every utterance as simulated caller emotion
 
     async def run(
         self,
@@ -99,6 +118,8 @@ class CallSimulator:
             print(f"  Session : {_DIM}{sid}{_RESET}")
             print(f"  Server  : {_DIM}{self.ws_url}{_RESET}")
             print(f"  Script  : {_DIM}{script.get('id', '?')}{_RESET}")
+            if self.emotion:
+                print(f"  Emotion : {_DIM}{self.emotion}{_RESET}  ← injected into all utterances")
             print(f"{_BOLD}{'─' * 60}{_RESET}\n")
 
         try:
@@ -141,6 +162,7 @@ class CallSimulator:
                         "event": InboundEvent.UTTERANCE,
                         "text": utterance,
                         "confidence": 1.0,
+                        **({"emotion": self.emotion} if self.emotion else {}),
                     }
                     t_sent = time.perf_counter()
                     await ws.send(json.dumps(utt_msg))
@@ -272,16 +294,24 @@ class CallSimulator:
     ) -> tuple[list[dict[str, Any]], str | None, str]:
         """Collect beats until server goes quiet (quiet_timeout_s with no new message).
 
+        Uses initial_wait_s for the first recv() to accommodate LLM latency, then
+        switches to quiet_timeout_s for subsequent beats.
+
         Returns (beats, terminal_event_or_None, step_id).
         """
         beats: list[dict[str, Any]] = []
+        audio_chunks: list[bytes] = []
         end_event: str | None = None
         end_step: str = ""
-        first_beat = True
+        first_text_beat = True   # first BEAT event (text) — no TTFA yet
+        first_audio_chunk = True  # first AUDIO_CHUNK — true TTFA
+        first_recv = True         # use initial_wait_s for first recv, quiet_timeout_s after
 
         while True:
+            timeout = self.initial_wait_s if first_recv else self.quiet_timeout_s
             try:
-                raw = await asyncio.wait_for(ws.recv(), timeout=self.quiet_timeout_s)
+                raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
+                first_recv = False
             except asyncio.TimeoutError:
                 break  # server is quiet → step complete, awaiting next utterance
 
@@ -289,25 +319,30 @@ class CallSimulator:
             event = msg.get("event", "")
 
             if event == OutboundEvent.BEAT:
-                if first_beat:
+                # Text beat — print text, TTFA will be shown with first audio chunk
+                if first_text_beat and not self.play_audio:
+                    # No audio mode: TTFA from first beat
                     ttfa_ms = msg.get("ttfa_ms") or round((time.perf_counter() - t_sent) * 1000, 1)
                     msg = {**msg, "_ttfa_ms": ttfa_ms}
-                    first_beat = False
+                    first_text_beat = False
                     if self.verbose:
                         self._print_agent_beat(msg, ttfa_ms)
                 else:
+                    first_text_beat = False
                     if self.verbose:
                         self._print_agent_beat(msg)
                 beats.append(msg)
 
             elif event == OutboundEvent.AUDIO_CHUNK:
-                # Real TTS mode — measure TTFA from chunk timing
-                if first_beat:
+                if first_audio_chunk:
                     ttfa_ms = round((time.perf_counter() - t_sent) * 1000, 1)
-                    first_beat = False
+                    first_audio_chunk = False
                     if self.verbose:
                         color = _RED if ttfa_ms > self.ttfa_warn_ms else _GREEN
-                        print(f"  {_DIM}[audio chunk received]{_RESET}  TTFA {color}{ttfa_ms:.0f}ms{_RESET}")
+                        print(f"  {_DIM}[audio TTFA {color}{ttfa_ms:.0f}ms{_RESET}{_DIM}]{_RESET}")
+                if self.play_audio:
+                    import base64 as _b64  # noqa: PLC0415
+                    audio_chunks.append(_b64.b64decode(msg["data"]))
                 beats.append(msg)
 
             elif event == OutboundEvent.HANGUP:
@@ -324,6 +359,12 @@ class CallSimulator:
                 if self.verbose:
                     print(f"\n  {_MAGENTA}{_BOLD}[HANDOFF]{_RESET}{_MAGENTA} step={end_step} reason={reason}{_RESET}")
                 break
+
+        # Play collected audio after response is fully received
+        if self.play_audio and audio_chunks:
+            pcm = b"".join(audio_chunks)
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, _play_pcm, pcm)
 
         return beats, end_event, end_step
 

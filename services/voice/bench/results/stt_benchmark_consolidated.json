@@ -1,0 +1,1585 @@
+[
+  {
+    "engine": "faster_whisper_small",
+    "label": "faster-whisper (small)",
+    "apple_silicon_accelerated": false,
+    "available": true,
+    "skip_reason": null,
+    "measurements": [
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u01",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "xa em muốn đặt lịch khám sức khỏe tổng quát ạ.",
+        "reference": "Dạ em muốn đặt lịch khám sức khỏe tổng quát ạ.",
+        "wer": 0.09090909090909091,
+        "latency_ms": 1186.6,
+        "audio_dur_s": 2.12,
+        "rtf": 0.558,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u02",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "cho anh hỏi phòng cám mình có làm việc thứ 7 không em?",
+        "reference": "Cho anh hỏi phòng khám mình có làm việc thứ bảy không em?",
+        "wer": 0.07692307692307693,
+        "latency_ms": 1108.1,
+        "audio_dur_s": 2.66,
+        "rtf": 0.417,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u03",
+        "tags": [
+          "digits"
+        ],
+        "ok": true,
+        "hypothesis": "Phố điện thoại của tôi là 0908 456789.",
+        "reference": "Số điện thoại của tôi là không chín không tám bốn năm sáu bảy tám chín.",
+        "wer": 0.0625,
+        "latency_ms": 1109.4,
+        "audio_dur_s": 3.53,
+        "rtf": 0.314,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u04",
+        "tags": [
+          "date"
+        ],
+        "ok": true,
+        "hypothesis": "Em cho chị đặt lịch này 10 bài tháng 9 nhé.",
+        "reference": "Em cho chị đặt lịch ngày mười bảy tháng chín nhé.",
+        "wer": 0.18181818181818182,
+        "latency_ms": 1114.4,
+        "audio_dur_s": 2.22,
+        "rtf": 0.503,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u05",
+        "tags": [
+          "time"
+        ],
+        "ok": true,
+        "hypothesis": "khoảng 8 giờ giữ sáng nay được khâu em.",
+        "reference": "Khoảng tám giờ rưỡi sáng mai được không em?",
+        "wer": 0.3333333333333333,
+        "latency_ms": 1099.0,
+        "audio_dur_s": 1.92,
+        "rtf": 0.574,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u06",
+        "tags": [
+          "name"
+        ],
+        "ok": true,
+        "hypothesis": "tên tôi là Nguyễn Thị Thanh Nguyên.",
+        "reference": "Tên tôi là Nguyễn Thị Thanh Huyền.",
+        "wer": 0.14285714285714285,
+        "latency_ms": 1111.6,
+        "audio_dur_s": 1.35,
+        "rtf": 0.825,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u07",
+        "tags": [
+          "name",
+          "digits"
+        ],
+        "ok": true,
+        "hypothesis": "Anh Tân Trần Quốc Bảo, xin năm 1985",
+        "reference": "Anh tên Trần Quốc Bảo, sinh năm một chín tám lăm.",
+        "wer": 0.45454545454545453,
+        "latency_ms": 1070.1,
+        "audio_dur_s": 2.52,
+        "rtf": 0.425,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u08",
+        "tags": [
+          "domain"
+        ],
+        "ok": true,
+        "hypothesis": "Chị muốn nội xa dạng giày kế methi chuẩn bị dị ạ.",
+        "reference": "Chị muốn nội soi dạ dày gây mê thì chuẩn bị gì ạ?",
+        "wer": 0.5384615384615384,
+        "latency_ms": 1237.3,
+        "audio_dur_s": 2.66,
+        "rtf": 0.465,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u09",
+        "tags": [
+          "domain"
+        ],
+        "ok": true,
+        "hypothesis": "gói tầm phát un thư đại tràng giá bao nhiêu về em.",
+        "reference": "Gói tầm soát ung thư đại tràng giá bao nhiêu vậy em?",
+        "wer": 0.25,
+        "latency_ms": 1193.8,
+        "audio_dur_s": 2.47,
+        "rtf": 0.483,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u10",
+        "tags": [
+          "short"
+        ],
+        "ok": true,
+        "hypothesis": "Xa đúng rồi ạ!",
+        "reference": "Dạ đúng rồi ạ.",
+        "wer": 0.25,
+        "latency_ms": 1024.2,
+        "audio_dur_s": 0.8,
+        "rtf": 1.278,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u11",
+        "tags": [
+          "short"
+        ],
+        "ok": true,
+        "hypothesis": "Công trị đổi ý rồi.",
+        "reference": "Không, chị đổi ý rồi.",
+        "wer": 0.4,
+        "latency_ms": 1026.7,
+        "audio_dur_s": 1.04,
+        "rtf": 0.982,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u12",
+        "tags": [
+          "short"
+        ],
+        "ok": true,
+        "hypothesis": "Đang ơi cho anh hỏi chút",
+        "reference": "Em ơi cho anh hỏi chút.",
+        "wer": 0.16666666666666666,
+        "latency_ms": 1043.4,
+        "audio_dur_s": 1.1,
+        "rtf": 0.946,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u13",
+        "tags": [
+          "long",
+          "date",
+          "time"
+        ],
+        "ok": true,
+        "hypothesis": "Em đặt túc trị lịch nội xói vào chiều thứ tư tuần sau khoảng 2 giờ chiều nhé.",
+        "reference": "Em đặt giúp chị lịch nội soi vào chiều thứ tư tuần sau, khoảng hai giờ chiều nhé.",
+        "wer": 0.16666666666666666,
+        "latency_ms": 1344.0,
+        "audio_dur_s": 4.13,
+        "rtf": 0.325,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u14",
+        "tags": [
+          "long",
+          "date"
+        ],
+        "ok": true,
+        "hypothesis": "Anh muốn hủy lịch khám ngày mai và giờ sang thứ 6 tuần này được không em?",
+        "reference": "Anh muốn hủy lịch khám ngày mai và dời sang thứ sáu tuần này được không em?",
+        "wer": 0.058823529411764705,
+        "latency_ms": 1210.2,
+        "audio_dur_s": 3.61,
+        "rtf": 0.335,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u15",
+        "tags": [
+          "domain",
+          "name"
+        ],
+        "ok": true,
+        "hypothesis": "Chí nhanh để chạc ở quận 10 có xét diệp nóng không ạc.",
+        "reference": "Chi nhánh Doctor Check ở quận mười có xét nghiệm máu không ạ?",
+        "wer": 0.5384615384615384,
+        "latency_ms": 1264.9,
+        "audio_dur_s": 2.72,
+        "rtf": 0.466,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u16",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "cho anh sinh kết quả xét nhiệm hùng quả vỡ ạ.",
+        "reference": "Cho em xin kết quả xét nghiệm hôm qua với ạ.",
+        "wer": 0.5454545454545454,
+        "latency_ms": 1225.6,
+        "audio_dur_s": 2.07,
+        "rtf": 0.593,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u17",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "Têm chuyển máy cho đền viên tư vấn giúp chị đi.",
+        "reference": "Em chuyển máy cho nhân viên tư vấn giúp chị đi.",
+        "wer": 0.18181818181818182,
+        "latency_ms": 1165.2,
+        "audio_dur_s": 2.14,
+        "rtf": 0.545,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u18",
+        "tags": [
+          "digits"
+        ],
+        "ok": true,
+        "hypothesis": "số căn cứ của anh là 079-200031234",
+        "reference": "Số căn cước của anh là không bảy chín hai không không ba một hai ba bốn.",
+        "wer": 0.5882352941176471,
+        "latency_ms": 1119.7,
+        "audio_dur_s": 3.31,
+        "rtf": 0.338,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u19",
+        "tags": [
+          "name",
+          "time"
+        ],
+        "ok": true,
+        "hypothesis": "Bác sĩ Lê Minh Đức có cảm vào buổi sáng không em?",
+        "reference": "Bác sĩ Lê Minh Đức có khám vào buổi sáng không em?",
+        "wer": 0.08333333333333333,
+        "latency_ms": 1160.4,
+        "audio_dur_s": 2.46,
+        "rtf": 0.471,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_small",
+        "uid": "u20",
+        "tags": [
+          "name"
+        ],
+        "ok": true,
+        "hypothesis": "Giá em ở Bình Thanh đường sâu viết nệ tĩnh ảnh.",
+        "reference": "Dạ em ở Bình Thạnh, đường Xô Viết Nghệ Tĩnh ạ.",
+        "wer": 0.45454545454545453,
+        "latency_ms": 1233.9,
+        "audio_dur_s": 2.31,
+        "rtf": 0.534,
+        "error": null
+      }
+    ]
+  },
+  {
+    "engine": "faster_whisper_medium",
+    "label": "faster-whisper (medium)",
+    "apple_silicon_accelerated": false,
+    "available": true,
+    "skip_reason": null,
+    "measurements": [
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u01",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "Sao em muốn đặt liệt khám sức khỏe tổng quát ạ?",
+        "reference": "Dạ em muốn đặt lịch khám sức khỏe tổng quát ạ.",
+        "wer": 0.18181818181818182,
+        "latency_ms": 3610.0,
+        "audio_dur_s": 2.12,
+        "rtf": 1.699,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u02",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "Cho anh hỏi phòng cám mình có làm việc thứ 7 không em?",
+        "reference": "Cho anh hỏi phòng khám mình có làm việc thứ bảy không em?",
+        "wer": 0.07692307692307693,
+        "latency_ms": 3487.6,
+        "audio_dur_s": 2.66,
+        "rtf": 1.312,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u03",
+        "tags": [
+          "digits"
+        ],
+        "ok": true,
+        "hypothesis": "Phố điện thoại của tôi là 0908456789.",
+        "reference": "Số điện thoại của tôi là không chín không tám bốn năm sáu bảy tám chín.",
+        "wer": 0.0625,
+        "latency_ms": 3419.7,
+        "audio_dur_s": 3.53,
+        "rtf": 0.969,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u04",
+        "tags": [
+          "date"
+        ],
+        "ok": true,
+        "hypothesis": "Em cho chị đặt địch này 17 tháng 9 nhé.",
+        "reference": "Em cho chị đặt lịch ngày mười bảy tháng chín nhé.",
+        "wer": 0.18181818181818182,
+        "latency_ms": 3432.9,
+        "audio_dur_s": 2.22,
+        "rtf": 1.548,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u05",
+        "tags": [
+          "time"
+        ],
+        "ok": true,
+        "hypothesis": "khoảng 8 giờ giữa sáng mai được câu em.",
+        "reference": "Khoảng tám giờ rưỡi sáng mai được không em?",
+        "wer": 0.2222222222222222,
+        "latency_ms": 3491.9,
+        "audio_dur_s": 1.92,
+        "rtf": 1.823,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u06",
+        "tags": [
+          "name"
+        ],
+        "ok": true,
+        "hypothesis": "Tên tôi là Nguyễn Thị Thanh Nguyền",
+        "reference": "Tên tôi là Nguyễn Thị Thanh Huyền.",
+        "wer": 0.14285714285714285,
+        "latency_ms": 3448.5,
+        "audio_dur_s": 1.35,
+        "rtf": 2.56,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u07",
+        "tags": [
+          "name",
+          "digits"
+        ],
+        "ok": true,
+        "hypothesis": "Anh Tân Trần Quốc Bảo, sinh năm 1985.",
+        "reference": "Anh tên Trần Quốc Bảo, sinh năm một chín tám lăm.",
+        "wer": 0.36363636363636365,
+        "latency_ms": 3396.9,
+        "audio_dur_s": 2.52,
+        "rtf": 1.348,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u08",
+        "tags": [
+          "domain"
+        ],
+        "ok": true,
+        "hypothesis": "Chị muốn nụ so sạch giày, gây mê thì chuẩn bị dị ạ.",
+        "reference": "Chị muốn nội soi dạ dày gây mê thì chuẩn bị gì ạ?",
+        "wer": 0.38461538461538464,
+        "latency_ms": 3764.9,
+        "audio_dur_s": 2.66,
+        "rtf": 1.416,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u09",
+        "tags": [
+          "domain"
+        ],
+        "ok": true,
+        "hypothesis": "Gói tầm phát uống thư đại trang giá bao nhiêu vậy em?",
+        "reference": "Gói tầm soát ung thư đại tràng giá bao nhiêu vậy em?",
+        "wer": 0.25,
+        "latency_ms": 3657.8,
+        "audio_dur_s": 2.47,
+        "rtf": 1.479,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u10",
+        "tags": [
+          "short"
+        ],
+        "ok": true,
+        "hypothesis": "Dạ, đúng rồi ạ",
+        "reference": "Dạ đúng rồi ạ.",
+        "wer": 0.0,
+        "latency_ms": 3196.6,
+        "audio_dur_s": 0.8,
+        "rtf": 3.99,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u11",
+        "tags": [
+          "short"
+        ],
+        "ok": true,
+        "hypothesis": "Không chị đổi ý rồi",
+        "reference": "Không, chị đổi ý rồi.",
+        "wer": 0.0,
+        "latency_ms": 3155.7,
+        "audio_dur_s": 1.04,
+        "rtf": 3.02,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u12",
+        "tags": [
+          "short"
+        ],
+        "ok": true,
+        "hypothesis": "Anh Khang ơi, cho anh hỏi chút",
+        "reference": "Em ơi cho anh hỏi chút.",
+        "wer": 0.3333333333333333,
+        "latency_ms": 3279.1,
+        "audio_dur_s": 1.1,
+        "rtf": 2.973,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u13",
+        "tags": [
+          "long",
+          "date",
+          "time"
+        ],
+        "ok": true,
+        "hypothesis": "Em đặt giúp chị lịch nội soát vào chiều thứ tư tuần sau khoảng 2 giờ chiều nhé.",
+        "reference": "Em đặt giúp chị lịch nội soi vào chiều thứ tư tuần sau, khoảng hai giờ chiều nhé.",
+        "wer": 0.05555555555555555,
+        "latency_ms": 3811.2,
+        "audio_dur_s": 4.13,
+        "rtf": 0.922,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u14",
+        "tags": [
+          "long",
+          "date"
+        ],
+        "ok": true,
+        "hypothesis": "Anh muốn nghỉ lịch khám ngày mai và rời sang thứ 6 tuần này được không em?",
+        "reference": "Anh muốn hủy lịch khám ngày mai và dời sang thứ sáu tuần này được không em?",
+        "wer": 0.11764705882352941,
+        "latency_ms": 3637.2,
+        "audio_dur_s": 3.61,
+        "rtf": 1.007,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u15",
+        "tags": [
+          "domain",
+          "name"
+        ],
+        "ok": true,
+        "hypothesis": "Chi nhánh tư trách ở quận 10 có sách nhiệm nấu không ạ?",
+        "reference": "Chi nhánh Doctor Check ở quận mười có xét nghiệm máu không ạ?",
+        "wer": 0.38461538461538464,
+        "latency_ms": 3663.6,
+        "audio_dur_s": 2.72,
+        "rtf": 1.349,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u16",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "Cho anh xin kết quả xét nghiệm hôm qua với ạ.",
+        "reference": "Cho em xin kết quả xét nghiệm hôm qua với ạ.",
+        "wer": 0.09090909090909091,
+        "latency_ms": 3539.2,
+        "audio_dur_s": 2.07,
+        "rtf": 1.713,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u17",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "Em chuyển máy cho nhân viên tư vấn giúp chị đi.",
+        "reference": "Em chuyển máy cho nhân viên tư vấn giúp chị đi.",
+        "wer": 0.0,
+        "latency_ms": 3522.9,
+        "audio_dur_s": 2.14,
+        "rtf": 1.649,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u18",
+        "tags": [
+          "digits"
+        ],
+        "ok": true,
+        "hypothesis": "Số căn cước của anh là 0792-0031234.",
+        "reference": "Số căn cước của anh là không bảy chín hai không không ba một hai ba bốn.",
+        "wer": 0.0,
+        "latency_ms": 3544.2,
+        "audio_dur_s": 3.31,
+        "rtf": 1.071,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u19",
+        "tags": [
+          "name",
+          "time"
+        ],
+        "ok": true,
+        "hypothesis": "Bác sĩ Lê Minh Đức có khám vào buổi sáng không em?",
+        "reference": "Bác sĩ Lê Minh Đức có khám vào buổi sáng không em?",
+        "wer": 0.0,
+        "latency_ms": 3677.8,
+        "audio_dur_s": 2.46,
+        "rtf": 1.494,
+        "error": null
+      },
+      {
+        "engine": "faster_whisper_medium",
+        "uid": "u20",
+        "tags": [
+          "name"
+        ],
+        "ok": true,
+        "hypothesis": "Gia em ở Bình Thạnh, đường xô viết nệ tĩnh ạ.",
+        "reference": "Dạ em ở Bình Thạnh, đường Xô Viết Nghệ Tĩnh ạ.",
+        "wer": 0.18181818181818182,
+        "latency_ms": 3682.8,
+        "audio_dur_s": 2.31,
+        "rtf": 1.594,
+        "error": null
+      }
+    ]
+  },
+  {
+    "engine": "phowhisper_small",
+    "label": "PhoWhisper-small (transformers, unconverted)",
+    "apple_silicon_accelerated": true,
+    "available": true,
+    "skip_reason": null,
+    "measurements": [
+      {
+        "engine": "phowhisper_small",
+        "uid": "u01",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "ta em muốn đặt lịch khám sức khỏe tổng quát ạ.",
+        "reference": "Dạ em muốn đặt lịch khám sức khỏe tổng quát ạ.",
+        "wer": 0.09090909090909091,
+        "latency_ms": 877.1,
+        "audio_dur_s": 2.12,
+        "rtf": 0.413,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u02",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "cho anh hỏi phòng khám mình có làm việc thứ bảy không em.",
+        "reference": "Cho anh hỏi phòng khám mình có làm việc thứ bảy không em?",
+        "wer": 0.0,
+        "latency_ms": 667.3,
+        "audio_dur_s": 2.66,
+        "rtf": 0.251,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u03",
+        "tags": [
+          "digits"
+        ],
+        "ok": true,
+        "hypothesis": "số điện thoại của tôi là không chín không tám bốn năm sáu bảy tám chín.",
+        "reference": "Số điện thoại của tôi là không chín không tám bốn năm sáu bảy tám chín.",
+        "wer": 0.0,
+        "latency_ms": 951.5,
+        "audio_dur_s": 3.53,
+        "rtf": 0.27,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u04",
+        "tags": [
+          "date"
+        ],
+        "ok": true,
+        "hypothesis": "em cho chị đặt lịch này mười bảy tháng chín nhé.",
+        "reference": "Em cho chị đặt lịch ngày mười bảy tháng chín nhé.",
+        "wer": 0.09090909090909091,
+        "latency_ms": 639.5,
+        "audio_dur_s": 2.22,
+        "rtf": 0.288,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u05",
+        "tags": [
+          "time"
+        ],
+        "ok": true,
+        "hypothesis": "khoảng tám giờ giữa sáng mai được khâu em.",
+        "reference": "Khoảng tám giờ rưỡi sáng mai được không em?",
+        "wer": 0.2222222222222222,
+        "latency_ms": 567.9,
+        "audio_dur_s": 1.92,
+        "rtf": 0.296,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u06",
+        "tags": [
+          "name"
+        ],
+        "ok": true,
+        "hypothesis": "tên tôi là nguyễn thị thanh huyền.",
+        "reference": "Tên tôi là Nguyễn Thị Thanh Huyền.",
+        "wer": 0.0,
+        "latency_ms": 626.3,
+        "audio_dur_s": 1.35,
+        "rtf": 0.465,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u07",
+        "tags": [
+          "name",
+          "digits"
+        ],
+        "ok": true,
+        "hypothesis": "anh tần trần quốc bảo sinh năm một chín tám lăm.",
+        "reference": "Anh tên Trần Quốc Bảo, sinh năm một chín tám lăm.",
+        "wer": 0.09090909090909091,
+        "latency_ms": 700.2,
+        "audio_dur_s": 2.52,
+        "rtf": 0.278,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u08",
+        "tags": [
+          "domain"
+        ],
+        "ok": true,
+        "hypothesis": "chị muốn nội so sạ giày cây mê thì chuẩn bị dựạn.",
+        "reference": "Chị muốn nội soi dạ dày gây mê thì chuẩn bị gì ạ?",
+        "wer": 0.46153846153846156,
+        "latency_ms": 747.9,
+        "audio_dur_s": 2.66,
+        "rtf": 0.281,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u09",
+        "tags": [
+          "domain"
+        ],
+        "ok": true,
+        "hypothesis": "gói tầm soát ung thư đại tràng giá bao nhiêu vậy em.",
+        "reference": "Gói tầm soát ung thư đại tràng giá bao nhiêu vậy em?",
+        "wer": 0.0,
+        "latency_ms": 748.2,
+        "audio_dur_s": 2.47,
+        "rtf": 0.303,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u10",
+        "tags": [
+          "short"
+        ],
+        "ok": true,
+        "hypothesis": "dạ đúng rồi ạ.",
+        "reference": "Dạ đúng rồi ạ.",
+        "wer": 0.0,
+        "latency_ms": 424.5,
+        "audio_dur_s": 0.8,
+        "rtf": 0.53,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u11",
+        "tags": [
+          "short"
+        ],
+        "ok": true,
+        "hypothesis": "công trị đổi ý rồi.",
+        "reference": "Không, chị đổi ý rồi.",
+        "wer": 0.4,
+        "latency_ms": 444.2,
+        "audio_dur_s": 1.04,
+        "rtf": 0.425,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u12",
+        "tags": [
+          "short"
+        ],
+        "ok": true,
+        "hypothesis": "các ơi cho anh hỏi chút.",
+        "reference": "Em ơi cho anh hỏi chút.",
+        "wer": 0.16666666666666666,
+        "latency_ms": 437.9,
+        "audio_dur_s": 1.1,
+        "rtf": 0.397,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u13",
+        "tags": [
+          "long",
+          "date",
+          "time"
+        ],
+        "ok": true,
+        "hypothesis": "em đặt giúp chị lịch nội soi vào chiều thứ tư tuần sau khoảng hai giờ chiều nhé.",
+        "reference": "Em đặt giúp chị lịch nội soi vào chiều thứ tư tuần sau, khoảng hai giờ chiều nhé.",
+        "wer": 0.0,
+        "latency_ms": 890.0,
+        "audio_dur_s": 4.13,
+        "rtf": 0.215,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u14",
+        "tags": [
+          "long",
+          "date"
+        ],
+        "ok": true,
+        "hypothesis": "anh muốn nghỉ lịch khám ngày mai và rời sang thứ sáu tuần này được khâu em.",
+        "reference": "Anh muốn hủy lịch khám ngày mai và dời sang thứ sáu tuần này được không em?",
+        "wer": 0.17647058823529413,
+        "latency_ms": 828.8,
+        "audio_dur_s": 3.61,
+        "rtf": 0.23,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u15",
+        "tags": [
+          "domain",
+          "name"
+        ],
+        "ok": true,
+        "hypothesis": "chi nhánh đứt tơ tre ở quận mười có xét nghiệm máu không ạ.",
+        "reference": "Chi nhánh Doctor Check ở quận mười có xét nghiệm máu không ạ?",
+        "wer": 0.23076923076923078,
+        "latency_ms": 808.7,
+        "audio_dur_s": 2.72,
+        "rtf": 0.298,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u16",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "cho anh xin kết quản xét nghiệm hồn quả với ạ.",
+        "reference": "Cho em xin kết quả xét nghiệm hôm qua với ạ.",
+        "wer": 0.36363636363636365,
+        "latency_ms": 668.2,
+        "audio_dur_s": 2.07,
+        "rtf": 0.323,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u17",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "em chuyển máy cho nhân viên tư vấn giúp chị đi.",
+        "reference": "Em chuyển máy cho nhân viên tư vấn giúp chị đi.",
+        "wer": 0.0,
+        "latency_ms": 647.5,
+        "audio_dur_s": 2.14,
+        "rtf": 0.303,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u18",
+        "tags": [
+          "digits"
+        ],
+        "ok": true,
+        "hypothesis": "số căn cước của anh là không bảy chín hai không không ba một hai ba bốn.",
+        "reference": "Số căn cước của anh là không bảy chín hai không không ba một hai ba bốn.",
+        "wer": 0.0,
+        "latency_ms": 764.9,
+        "audio_dur_s": 3.31,
+        "rtf": 0.231,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u19",
+        "tags": [
+          "name",
+          "time"
+        ],
+        "ok": true,
+        "hypothesis": "bác sĩ lê minh đức có khám vào buổi sáng không em.",
+        "reference": "Bác sĩ Lê Minh Đức có khám vào buổi sáng không em?",
+        "wer": 0.0,
+        "latency_ms": 640.3,
+        "audio_dur_s": 2.46,
+        "rtf": 0.26,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_small",
+        "uid": "u20",
+        "tags": [
+          "name"
+        ],
+        "ok": true,
+        "hypothesis": "cha em ở bình thạnh đường xô viết lệ tĩnh ạ.",
+        "reference": "Dạ em ở Bình Thạnh, đường Xô Viết Nghệ Tĩnh ạ.",
+        "wer": 0.18181818181818182,
+        "latency_ms": 685.9,
+        "audio_dur_s": 2.31,
+        "rtf": 0.297,
+        "error": null
+      }
+    ]
+  },
+  {
+    "engine": "phowhisper_medium",
+    "label": "PhoWhisper-medium (transformers, unconverted)",
+    "apple_silicon_accelerated": true,
+    "available": true,
+    "skip_reason": null,
+    "measurements": [
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u01",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "dạ em muốn đặt đi khám sức khỏe tổng quát ạ.",
+        "reference": "Dạ em muốn đặt lịch khám sức khỏe tổng quát ạ.",
+        "wer": 0.09090909090909091,
+        "latency_ms": 1805.7,
+        "audio_dur_s": 2.12,
+        "rtf": 0.85,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u02",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "cho anh hỏi phòng khám mình có làm việc thứ bảy không em.",
+        "reference": "Cho anh hỏi phòng khám mình có làm việc thứ bảy không em?",
+        "wer": 0.0,
+        "latency_ms": 1714.9,
+        "audio_dur_s": 2.66,
+        "rtf": 0.645,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u03",
+        "tags": [
+          "digits"
+        ],
+        "ok": true,
+        "hypothesis": "số điện thoại của tôi là không chín không tám bốn năm sáu bảy tám chín.",
+        "reference": "Số điện thoại của tôi là không chín không tám bốn năm sáu bảy tám chín.",
+        "wer": 0.0,
+        "latency_ms": 2416.8,
+        "audio_dur_s": 3.53,
+        "rtf": 0.685,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u04",
+        "tags": [
+          "date"
+        ],
+        "ok": true,
+        "hypothesis": "em cho chị đặt lịch này mười bảy tháng chín nhé.",
+        "reference": "Em cho chị đặt lịch ngày mười bảy tháng chín nhé.",
+        "wer": 0.09090909090909091,
+        "latency_ms": 1664.7,
+        "audio_dur_s": 2.22,
+        "rtf": 0.751,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u05",
+        "tags": [
+          "time"
+        ],
+        "ok": true,
+        "hypothesis": "khoảng tám giờ rưỡi sáng mai được không em.",
+        "reference": "Khoảng tám giờ rưỡi sáng mai được không em?",
+        "wer": 0.0,
+        "latency_ms": 1637.6,
+        "audio_dur_s": 1.92,
+        "rtf": 0.855,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u06",
+        "tags": [
+          "name"
+        ],
+        "ok": true,
+        "hypothesis": "tên tôi là nguyễn thị thanh huyền.",
+        "reference": "Tên tôi là Nguyễn Thị Thanh Huyền.",
+        "wer": 0.0,
+        "latency_ms": 1665.3,
+        "audio_dur_s": 1.35,
+        "rtf": 1.236,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u07",
+        "tags": [
+          "name",
+          "digits"
+        ],
+        "ok": true,
+        "hypothesis": "anh tên trần quốc bảo sinh năm một chín tám năm.",
+        "reference": "Anh tên Trần Quốc Bảo, sinh năm một chín tám lăm.",
+        "wer": 0.09090909090909091,
+        "latency_ms": 1767.1,
+        "audio_dur_s": 2.52,
+        "rtf": 0.701,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u08",
+        "tags": [
+          "domain"
+        ],
+        "ok": true,
+        "hypothesis": "chị muốn nội xoạ dạ dày gây mê thì chuẩn bị gì ạ.",
+        "reference": "Chị muốn nội soi dạ dày gây mê thì chuẩn bị gì ạ?",
+        "wer": 0.07692307692307693,
+        "latency_ms": 1973.1,
+        "audio_dur_s": 2.66,
+        "rtf": 0.742,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u09",
+        "tags": [
+          "domain"
+        ],
+        "ok": true,
+        "hypothesis": "gói tầm soát ung thư đại tràng giá bao nhiêu vậy em.",
+        "reference": "Gói tầm soát ung thư đại tràng giá bao nhiêu vậy em?",
+        "wer": 0.0,
+        "latency_ms": 1915.7,
+        "audio_dur_s": 2.47,
+        "rtf": 0.775,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u10",
+        "tags": [
+          "short"
+        ],
+        "ok": true,
+        "hypothesis": "dạ đúng rồi ạ.",
+        "reference": "Dạ đúng rồi ạ.",
+        "wer": 0.0,
+        "latency_ms": 1168.9,
+        "audio_dur_s": 0.8,
+        "rtf": 1.459,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u11",
+        "tags": [
+          "short"
+        ],
+        "ok": true,
+        "hypothesis": "không chị đổi ý rồi.",
+        "reference": "Không, chị đổi ý rồi.",
+        "wer": 0.0,
+        "latency_ms": 1068.9,
+        "audio_dur_s": 1.04,
+        "rtf": 1.023,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u12",
+        "tags": [
+          "short"
+        ],
+        "ok": true,
+        "hypothesis": "eng ơi cho anh hỏi chút.",
+        "reference": "Em ơi cho anh hỏi chút.",
+        "wer": 0.16666666666666666,
+        "latency_ms": 1127.1,
+        "audio_dur_s": 1.1,
+        "rtf": 1.022,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u13",
+        "tags": [
+          "long",
+          "date",
+          "time"
+        ],
+        "ok": true,
+        "hypothesis": "em đặt giúp chị lịch nội soi vào chiều thứ tư tuần sau khoảng hai giờ chiều nhé.",
+        "reference": "Em đặt giúp chị lịch nội soi vào chiều thứ tư tuần sau, khoảng hai giờ chiều nhé.",
+        "wer": 0.0,
+        "latency_ms": 2316.1,
+        "audio_dur_s": 4.13,
+        "rtf": 0.56,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u14",
+        "tags": [
+          "long",
+          "date"
+        ],
+        "ok": true,
+        "hypothesis": "anh muốn nghỉ lịch khám ngày mai và rời sàn thứ sáu tuần này được không em.",
+        "reference": "Anh muốn hủy lịch khám ngày mai và dời sang thứ sáu tuần này được không em?",
+        "wer": 0.17647058823529413,
+        "latency_ms": 2116.1,
+        "audio_dur_s": 3.61,
+        "rtf": 0.586,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u15",
+        "tags": [
+          "domain",
+          "name"
+        ],
+        "ok": true,
+        "hypothesis": "chi nhánh gấp theo chéc ở quận mười có trách nhiệm máu không ạ.",
+        "reference": "Chi nhánh Doctor Check ở quận mười có xét nghiệm máu không ạ?",
+        "wer": 0.38461538461538464,
+        "latency_ms": 2121.6,
+        "audio_dur_s": 2.72,
+        "rtf": 0.781,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u16",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "cho anh xin kết quả xét nghiệm hồng quà với ạ.",
+        "reference": "Cho em xin kết quả xét nghiệm hôm qua với ạ.",
+        "wer": 0.2727272727272727,
+        "latency_ms": 1715.1,
+        "audio_dur_s": 2.07,
+        "rtf": 0.83,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u17",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "em chuyển máy cho nhân viên tư vấn giúp chị đi.",
+        "reference": "Em chuyển máy cho nhân viên tư vấn giúp chị đi.",
+        "wer": 0.0,
+        "latency_ms": 1665.8,
+        "audio_dur_s": 2.14,
+        "rtf": 0.78,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u18",
+        "tags": [
+          "digits"
+        ],
+        "ok": true,
+        "hypothesis": "số căn cước của anh là không bảy chín hai không không ba một hai ba bốn.",
+        "reference": "Số căn cước của anh là không bảy chín hai không không ba một hai ba bốn.",
+        "wer": 0.0,
+        "latency_ms": 1919.3,
+        "audio_dur_s": 3.31,
+        "rtf": 0.58,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u19",
+        "tags": [
+          "name",
+          "time"
+        ],
+        "ok": true,
+        "hypothesis": "bác sĩ lê minh đức có khám vào buổi sáng không em.",
+        "reference": "Bác sĩ Lê Minh Đức có khám vào buổi sáng không em?",
+        "wer": 0.0,
+        "latency_ms": 1681.6,
+        "audio_dur_s": 2.46,
+        "rtf": 0.683,
+        "error": null
+      },
+      {
+        "engine": "phowhisper_medium",
+        "uid": "u20",
+        "tags": [
+          "name"
+        ],
+        "ok": true,
+        "hypothesis": "dạ em ở bình thạnh đường xô viết nghệ thịnh ạ.",
+        "reference": "Dạ em ở Bình Thạnh, đường Xô Viết Nghệ Tĩnh ạ.",
+        "wer": 0.09090909090909091,
+        "latency_ms": 1834.9,
+        "audio_dur_s": 2.31,
+        "rtf": 0.794,
+        "error": null
+      }
+    ]
+  },
+  {
+    "engine": "mlx_whisper_small",
+    "label": "MLX-Whisper (whisper-small-mlx)",
+    "apple_silicon_accelerated": true,
+    "available": true,
+    "skip_reason": null,
+    "measurements": [
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u01",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "xa em muốn đặt lịch khám sức khỏe tổng quát ạ.",
+        "reference": "Dạ em muốn đặt lịch khám sức khỏe tổng quát ạ.",
+        "wer": 0.09090909090909091,
+        "latency_ms": 174.5,
+        "audio_dur_s": 2.12,
+        "rtf": 0.082,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u02",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "cho anh hỏi phòng cám mình có làm việc thứ 70 em.",
+        "reference": "Cho anh hỏi phòng khám mình có làm việc thứ bảy không em?",
+        "wer": 0.15384615384615385,
+        "latency_ms": 157.5,
+        "audio_dur_s": 2.66,
+        "rtf": 0.059,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u03",
+        "tags": [
+          "digits"
+        ],
+        "ok": true,
+        "hypothesis": "Phố điện thoại của tôi là 09.08456789.",
+        "reference": "Số điện thoại của tôi là không chín không tám bốn năm sáu bảy tám chín.",
+        "wer": 0.5625,
+        "latency_ms": 146.0,
+        "audio_dur_s": 3.53,
+        "rtf": 0.041,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u04",
+        "tags": [
+          "date"
+        ],
+        "ok": true,
+        "hypothesis": "Em cho chị đặt địch này 10 bài tháng 9 nhé.",
+        "reference": "Em cho chị đặt lịch ngày mười bảy tháng chín nhé.",
+        "wer": 0.2727272727272727,
+        "latency_ms": 147.3,
+        "audio_dur_s": 2.22,
+        "rtf": 0.066,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u05",
+        "tags": [
+          "time"
+        ],
+        "ok": true,
+        "hypothesis": "khoảng 8 giờ giữ sáng nay được khâu em.",
+        "reference": "Khoảng tám giờ rưỡi sáng mai được không em?",
+        "wer": 0.3333333333333333,
+        "latency_ms": 137.9,
+        "audio_dur_s": 1.92,
+        "rtf": 0.072,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u06",
+        "tags": [
+          "name"
+        ],
+        "ok": true,
+        "hypothesis": "Tên tôi là Nguyễn Thị Thanh Nguyên.",
+        "reference": "Tên tôi là Nguyễn Thị Thanh Huyền.",
+        "wer": 0.14285714285714285,
+        "latency_ms": 143.2,
+        "audio_dur_s": 1.35,
+        "rtf": 0.106,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u07",
+        "tags": [
+          "name",
+          "digits"
+        ],
+        "ok": true,
+        "hypothesis": "Anh Tân Trần Quốc Bảo, xin năm 1985",
+        "reference": "Anh tên Trần Quốc Bảo, sinh năm một chín tám lăm.",
+        "wer": 0.45454545454545453,
+        "latency_ms": 134.0,
+        "audio_dur_s": 2.52,
+        "rtf": 0.053,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u08",
+        "tags": [
+          "domain"
+        ],
+        "ok": true,
+        "hypothesis": "Chị muốn nội xa sạn giải kế methi chuẩn bị dị ạ.",
+        "reference": "Chị muốn nội soi dạ dày gây mê thì chuẩn bị gì ạ?",
+        "wer": 0.5384615384615384,
+        "latency_ms": 167.5,
+        "audio_dur_s": 2.66,
+        "rtf": 0.063,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u09",
+        "tags": [
+          "domain"
+        ],
+        "ok": true,
+        "hypothesis": "gói tầm phát uống thứ đại tràng giá bao nhiêu về em.",
+        "reference": "Gói tầm soát ung thư đại tràng giá bao nhiêu vậy em?",
+        "wer": 0.3333333333333333,
+        "latency_ms": 164.0,
+        "audio_dur_s": 2.47,
+        "rtf": 0.066,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u10",
+        "tags": [
+          "short"
+        ],
+        "ok": true,
+        "hypothesis": "Xa đúng rồi ạ!",
+        "reference": "Dạ đúng rồi ạ.",
+        "wer": 0.25,
+        "latency_ms": 118.5,
+        "audio_dur_s": 0.8,
+        "rtf": 0.148,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u11",
+        "tags": [
+          "short"
+        ],
+        "ok": true,
+        "hypothesis": "Công trị đổi ý rồi.",
+        "reference": "Không, chị đổi ý rồi.",
+        "wer": 0.4,
+        "latency_ms": 121.8,
+        "audio_dur_s": 1.04,
+        "rtf": 0.117,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u12",
+        "tags": [
+          "short"
+        ],
+        "ok": true,
+        "hypothesis": "Đang ơi cho anh hỏi chút",
+        "reference": "Em ơi cho anh hỏi chút.",
+        "wer": 0.16666666666666666,
+        "latency_ms": 121.7,
+        "audio_dur_s": 1.1,
+        "rtf": 0.11,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u13",
+        "tags": [
+          "long",
+          "date",
+          "time"
+        ],
+        "ok": true,
+        "hypothesis": "Em đặt túc chỉ lịch nội xói vào chiều thứ tư tuần sau khoảng 2 giờ chiều nhé.",
+        "reference": "Em đặt giúp chị lịch nội soi vào chiều thứ tư tuần sau, khoảng hai giờ chiều nhé.",
+        "wer": 0.16666666666666666,
+        "latency_ms": 189.2,
+        "audio_dur_s": 4.13,
+        "rtf": 0.046,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u14",
+        "tags": [
+          "long",
+          "date"
+        ],
+        "ok": true,
+        "hypothesis": "Anh muốn hủy lịch khám ngày mai và giờ sang thứ 6 tuần này được không em?",
+        "reference": "Anh muốn hủy lịch khám ngày mai và dời sang thứ sáu tuần này được không em?",
+        "wer": 0.058823529411764705,
+        "latency_ms": 164.4,
+        "audio_dur_s": 3.61,
+        "rtf": 0.046,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u15",
+        "tags": [
+          "domain",
+          "name"
+        ],
+        "ok": true,
+        "hypothesis": "Chí nhánh, ghi tìm chác ở quận 10 có xét diệp nóng không ạc.",
+        "reference": "Chi nhánh Doctor Check ở quận mười có xét nghiệm máu không ạ?",
+        "wer": 0.5384615384615384,
+        "latency_ms": 183.3,
+        "audio_dur_s": 2.72,
+        "rtf": 0.067,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u16",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "cho anh xin kết quả xét nhiệm hùng quả vỡ ạ.",
+        "reference": "Cho em xin kết quả xét nghiệm hôm qua với ạ.",
+        "wer": 0.45454545454545453,
+        "latency_ms": 164.6,
+        "audio_dur_s": 2.07,
+        "rtf": 0.08,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u17",
+        "tags": [
+          "intent"
+        ],
+        "ok": true,
+        "hypothesis": "Têm chuyển máy cho đền viên tư vấn giúp chị đi.",
+        "reference": "Em chuyển máy cho nhân viên tư vấn giúp chị đi.",
+        "wer": 0.18181818181818182,
+        "latency_ms": 156.0,
+        "audio_dur_s": 2.14,
+        "rtf": 0.073,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u18",
+        "tags": [
+          "digits"
+        ],
+        "ok": true,
+        "hypothesis": "số căn cứ của anh là 079-20031234",
+        "reference": "Số căn cước của anh là không bảy chín hai không không ba một hai ba bốn.",
+        "wer": 0.058823529411764705,
+        "latency_ms": 137.2,
+        "audio_dur_s": 3.31,
+        "rtf": 0.041,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u19",
+        "tags": [
+          "name",
+          "time"
+        ],
+        "ok": true,
+        "hypothesis": "Bác sĩ Lê Minh Đức có cảm vào buổi sáng không em?",
+        "reference": "Bác sĩ Lê Minh Đức có khám vào buổi sáng không em?",
+        "wer": 0.08333333333333333,
+        "latency_ms": 157.4,
+        "audio_dur_s": 2.46,
+        "rtf": 0.064,
+        "error": null
+      },
+      {
+        "engine": "mlx_whisper_small",
+        "uid": "u20",
+        "tags": [
+          "name"
+        ],
+        "ok": true,
+        "hypothesis": "Giá em ở Bình Thành, đường sâu viết nệ Thĩnh ạ.",
+        "reference": "Dạ em ở Bình Thạnh, đường Xô Viết Nghệ Tĩnh ạ.",
+        "wer": 0.45454545454545453,
+        "latency_ms": 163.3,
+        "audio_dur_s": 2.31,
+        "rtf": 0.071,
+        "error": null
+      }
+    ]
+  },
+  {
+    "engine": "elevenlabs_scribe",
+    "label": "ElevenLabs Scribe v2 (cloud)",
+    "apple_silicon_accelerated": false,
+    "available": false,
+    "skip_reason": "ElevenLabs Scribe request failed: Client error '400 Bad Request' for url 'https://api.elevenlabs.io/v1/speech-to-text'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+    "measurements": []
+  }
+]

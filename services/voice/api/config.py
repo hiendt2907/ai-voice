@@ -11,8 +11,20 @@ class Settings(BaseSettings):
     service_api_key: str = ""
     doctorcheck_api_url: str = "https://www.doctorcheck.vn/api"
 
-    # STT engine: "elevenlabs" | "faster_whisper"
+    # Remote inference server (Macbook via Tailscale) — hosts Piper TTS + Whisper STT
+    inference_server_url: str = "http://100.93.3.96:8100"
+    # Shared service token sent as `Authorization: Bearer <token>` to the
+    # inference server (D4 — Tailscale ACLs alone are not authentication).
+    inference_server_token: str = ""
+
+    # STT engine: "elevenlabs" | "faster_whisper" | "sensevoice" | "remote"
     stt_engine: str = "elevenlabs"
+    # Phase 2 (D2/D5): when stt_engine == "remote", use the persistent WS
+    # streaming client (StreamingRemoteSTT) instead of the HTTP one-shot
+    # client (RemoteSTT). Default OFF — this must be opted into manually per
+    # the Phase 2 task 1 scope; RemoteSTT/AudioPipeline remains the
+    # production path until this has been validated.
+    use_streaming_stt: bool = False
     # ElevenLabs STT (shares key with TTS when using elevenlabs engine)
     # faster-whisper config (used when stt_engine == "faster_whisper")
     stt_model: str = "small"
@@ -32,12 +44,13 @@ class Settings(BaseSettings):
     tts_engine: str = "elevenlabs"
     # ElevenLabs TTS
     elevenlabs_api_key: str = ""
-    elevenlabs_voice_id: str = "hpp4J3VqNfWAUOO0d1Us"
-    elevenlabs_model_id: str = "eleven_turbo_v2_5"
-    elevenlabs_stability: float = 0.6
+    elevenlabs_voice_id: str = "d5HVupAWCwe4e6GvMCAL"
+    elevenlabs_model_id: str = "eleven_v3"
+    elevenlabs_stability: float = 0.71
     elevenlabs_similarity_boost: float = 0.75
-    elevenlabs_style: float = 0.3
+    elevenlabs_style: float = 0.0
     elevenlabs_use_speaker_boost: bool = True
+    elevenlabs_speed: float = 1.0
     # gwen-tts (fallback)
     tts_model_id: str = "g-group-ai-lab/gwen-tts-0.6B"
     tts_device: str = "cpu"

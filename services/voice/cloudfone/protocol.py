@@ -24,6 +24,7 @@ class InboundEvent(StrEnum):
 class OutboundEvent(StrEnum):
     AUDIO_CHUNK = "audio_chunk"  # real audio: base64 PCM chunk in "data"
     BEAT = "beat"                # mock / test: prosody beat metadata
+    FLUSH = "flush"              # barge-in: discard any buffered/in-flight playback now
     HANDOFF = "handoff"          # transfer to human agent
     HANGUP = "hangup"            # end call
     ERROR = "error"
@@ -54,12 +55,14 @@ class StartMessage:
 class UtteranceMessage:
     text: str
     confidence: float = 1.0
+    emotion: str | None = None  # injected by simulator --emotion flag or SenseVoice
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "UtteranceMessage":
         return cls(
             text=d.get("text", ""),
             confidence=float(d.get("confidence", 1.0)),
+            emotion=d.get("emotion") or None,
         )
 
 
@@ -82,6 +85,19 @@ class BeatPayload:
         if self.ttfa_ms is not None:
             d["ttfa_ms"] = round(self.ttfa_ms, 1)
         return d
+
+
+@dataclass(frozen=True)
+class FlushPayload:
+    """Sent on barge-in: tells the provider to stop playing/drop any audio
+    already handed to it for this turn. Without this the caller keeps
+    hearing the agent after interrupting — the server-side interrupt alone
+    only stops producing *new* audio."""
+
+    turn: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"event": OutboundEvent.FLUSH, "turn": self.turn}
 
 
 @dataclass(frozen=True)

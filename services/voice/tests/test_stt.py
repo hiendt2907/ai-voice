@@ -173,3 +173,19 @@ def test_vad_min_speech_duration_allows_long_utterance():
     vad._speech_start_ts = time.monotonic() - 0.45
     vad._last_speech_ts = time.monotonic() - 0.15  # 150ms silence
     assert vad.is_end_of_utterance() is True
+
+
+# ---------------------------------------------------------------------------
+# STTResult emotion field (P2 — SenseVoice integration)
+# ---------------------------------------------------------------------------
+
+def test_stt_result_emotion_default_none():
+    from stt.faster_whisper_stt import STTResult
+    result = STTResult(text="hello", confidence=0.9, is_final=True)
+    assert result.emotion is None
+
+
+def test_stt_result_emotion_field():
+    from stt.faster_whisper_stt import STTResult
+    result = STTResult(text="hello", confidence=0.9, is_final=True, emotion="happy")
+    assert result.emotion == "happy"

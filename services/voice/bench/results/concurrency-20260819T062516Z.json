@@ -1,0 +1,70 @@
+{
+  "meta": {
+    "ts": "2026-08-19T06:25:16+00:00",
+    "host": "Apple Silicon 12c / 26GB",
+    "llm_model": "qwen3:8b",
+    "turns_per_call": 3,
+    "stop_reason": "saturation at N=1: swap 2568.9 MB",
+    "max_concurrent_pass": 0,
+    "max_concurrent_marginal": 0
+  },
+  "levels": [
+    {
+      "n": 1,
+      "turns_ok": 3,
+      "errors": 0,
+      "error_rate": 0.0,
+      "wall_s": 7.5,
+      "stt": {
+        "p50": 1293.9123329997528,
+        "p95": 1305.4590419924352,
+        "mean": 1295.674180330631
+      },
+      "llm_ttft": {
+        "p50": 387.73154199589044,
+        "p95": 400.32970800530165,
+        "mean": 317.7968056697864
+      },
+      "llm_total": {
+        "p50": 1052.070250007091,
+        "p95": 1187.1801660163328,
+        "mean": 1084.378430338499
+      },
+      "llm_tps": {
+        "p50": 44.781974409534875,
+        "p95": 45.15768784542087,
+        "mean": 44.806931805071805
+      },
+      "tts_ttfa": {
+        "p50": 96.699166984763,
+        "p95": 148.5744999954477,
+        "mean": 110.2234723221045
+      },
+      "response": {
+        "p50": 1778.3430419804063,
+        "p95": 1791.1854999838397,
+        "mean": 1723.694458322522
+      },
+      "turn": {
+        "p50": 2450.1319580012932,
+        "p95": 2578.042582987109,
+        "mean": 2490.2896939990264
+      },
+      "resources": {
+        "cpu_mean": 29.9,
+        "cpu_max": 56.3,
+        "cpu_sustained_97_s": 0.0,
+        "mem_pct_max": 83.5,
+        "mem_used_gb_max": 21.5,
+        "swap_mb_max": 2568.9,
+        "inference_cpu_mean": 223.6,
+        "inference_cpu_max": 429.1,
+        "inference_rss_gb_max": 1.5,
+        "ollama_cpu_mean": 7.1,
+        "ollama_cpu_max": 31.5,
+        "ollama_rss_gb_max": 9.9
+      },
+      "response_x_baseline": 1.0
+    }
+  ]
+}

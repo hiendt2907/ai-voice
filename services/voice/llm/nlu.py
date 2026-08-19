@@ -34,6 +34,13 @@ Câu ngoài phạm vi (is_out_of_scope=true): câu hỏi về giá, chẩn đoá
 thông tin bác sĩ cụ thể, câu hỏi không liên quan đến đặt lịch.
 """
 
+_SENTIMENT_ADDON = """\
+Thêm field "emotion" vào JSON: một trong [neutral, happy, frustrated, confused, angry].
+Phân tích cảm xúc từ ngữ điệu và từ ngữ của người dùng.
+Ví dụ: "tại sao mãi không được" → frustrated, "cảm ơn em nhiều lắm" → happy.
+Mặc định neutral nếu không rõ.
+"""
+
 
 @dataclass(frozen=True)
 class LLMMatchResult:
@@ -41,6 +48,7 @@ class LLMMatchResult:
     slots: dict[str, str]
     confidence: float
     is_out_of_scope: bool
+    emotion: str = "neutral"
 
 
 def _build_intent_list(intents_catalog: list[dict]) -> str:
@@ -52,16 +60,22 @@ def _build_intent_list(intents_catalog: list[dict]) -> str:
     return "\n".join(lines) if lines else "(không có intent nào)"
 
 
+_VALID_EMOTIONS = frozenset({"neutral", "happy", "frustrated", "confused", "angry"})
+
+
 def _parse_llm_response(raw: str) -> LLMMatchResult:
     """Parse JSON from LLM response, tolerating markdown fences."""
     cleaned = re.sub(r"```(?:json)?\n?", "", raw).strip()
     try:
         data = json.loads(cleaned)
+        raw_emotion = str(data.get("emotion", "neutral")).lower()
+        emotion = raw_emotion if raw_emotion in _VALID_EMOTIONS else "neutral"
         return LLMMatchResult(
             intent=data.get("intent") or None,
             slots={k: str(v) for k, v in data.get("slots", {}).items()},
             confidence=float(data.get("confidence", 0.0)),
             is_out_of_scope=bool(data.get("is_out_of_scope", False)),
+            emotion=emotion,
         )
     except (json.JSONDecodeError, KeyError, TypeError) as exc:
         logger.warning("LLM NLU parse error: %s | raw=%r", exc, raw[:200])
@@ -79,6 +93,7 @@ class LLMNLUClassifier:
         utterance: str,
         intents_catalog: list[dict],
         slots_so_far: dict[str, str] | None = None,
+        sentiment_enabled: bool = False,
     ) -> LLMMatchResult:
         """Classify intent and extract slots with 800ms timeout.
 
@@ -88,6 +103,8 @@ class LLMNLUClassifier:
         intent_list = _build_intent_list(intents_catalog)
         slots_ctx = json.dumps(slots_so_far or {}, ensure_ascii=False)
 
+        system = _SYSTEM_PROMPT + (_SENTIMENT_ADDON if sentiment_enabled else "")
+
         user_content = (
             f"Danh sách intent:\n{intent_list}\n\n"
             f"Slot đã thu thập: {slots_ctx}\n\n"
@@ -95,7 +112,7 @@ class LLMNLUClassifier:
         )
 
         messages = [
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": system},
             {"role": "user", "content": user_content},
         ]
 

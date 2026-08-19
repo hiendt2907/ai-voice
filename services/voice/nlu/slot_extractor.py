@@ -158,6 +158,8 @@ _NAME_PATTERNS = [
     r"họ\s+tên\s+(?:là\s+)?(.{2,35})",
     r"bệnh\s+nhân\s+(?:tên|là)\s+(.{2,35})",
     r"(?:đặt\s+cho|khám\s+cho|lịch\s+cho|cho)\s+(?:anh|chị|em|bạn|ông|bà|cô|chú|bác)?\s*(" + _NAME_CAP + r"[a-zA-ZÀ-ỹ ]{1,34})",
+    # "Đặng Tập Hiền, số điện thoại 0909..." — name before comma followed by phone keyword
+    r"^(" + _NAME_CAP + r"[a-zA-ZÀ-ỹ ]{1,34}),\s*(?:số|sdt|đt\b|điện)",
 ]
 
 
@@ -182,7 +184,7 @@ def extract_slots(utterance: str) -> dict[str, str]:
 
     # ── Date ────────────────────────────────────────────────────────────────
     appointment_date: str | None = None
-    if re.search(r"\bhôm nay\b|\bngày hôm nay\b", utt):
+    if re.search(r"\bhôm nay\b|\bngày hôm nay\b|(?:sáng|chiều|tối)\s+nay\b|\bnay\b(?=\s+đi\b)", utt):
         appointment_date = _format_date_vn(now)
     elif re.search(r"\bngày mai\b", utt):
         appointment_date = _format_date_vn(now + timedelta(days=1))
@@ -221,21 +223,29 @@ def extract_slots(utterance: str) -> dict[str, str]:
     if appointment_date:
         slots["appointment_date"] = appointment_date
 
-    # ── Hour ────────────────────────────────────────────────────────────────
-    hour_m = re.search(r"(?:lúc\s+|khoảng\s+|đặt\s+)?(\d{1,2})\s*(?:giờ|h)\b", utt, re.IGNORECASE)
-    if hour_m:
-        h = int(hour_m.group(1))
-        if 6 <= h <= 21:
-            slots["appointment_hour"] = str(h)
-
-    # ── Time of day ─────────────────────────────────────────────────────────
+    # ── Time of day (parse before hour so we can do AM/PM correction) ────────
     if re.search(r"\bsáng\b", utterance, re.IGNORECASE):
         slots["time_of_day"] = "sáng"
     elif re.search(r"\bchiều\b", utterance, re.IGNORECASE):
         slots["time_of_day"] = "chiều"
     elif re.search(r"\btối\b", utterance, re.IGNORECASE):
         slots["time_of_day"] = "tối"
-    elif "appointment_hour" in slots:
+
+    # ── Hour ────────────────────────────────────────────────────────────────
+    hour_m = re.search(r"(?:lúc\s+|khoảng\s+|đặt\s+)?(\d{1,2})\s*(?:giờ|h)\b", utt, re.IGNORECASE)
+    if hour_m:
+        h = int(hour_m.group(1))
+        # AM/PM correction: "3h chiều" → 15, "11h sáng" → 11
+        tod = slots.get("time_of_day")
+        if tod == "chiều" and 1 <= h <= 6:
+            h += 12
+        elif tod == "tối" and 1 <= h <= 5:
+            h += 12
+        if 6 <= h <= 21:
+            slots["appointment_hour"] = str(h)
+
+    # Infer time_of_day from hour if not already set
+    if "time_of_day" not in slots and "appointment_hour" in slots:
         h = int(slots["appointment_hour"])
         slots["time_of_day"] = "sáng" if h < 12 else ("chiều" if h < 18 else "tối")
 
@@ -286,5 +296,13 @@ def extract_slots(utterance: str) -> dict[str, str]:
     phone_m = re.search(r"(?<!\d)(0[3-9]\d{8})(?!\d)", utterance)
     if phone_m:
         slots["patient_phone"] = phone_m.group(1)
+
+    # ── Bare Vietnamese name fallback ─────────────────────────────────────────
+    # When utterance is 2-4 words all starting with actual capital letters,
+    # treat it as a provided name (covers "Nguyễn Văn A" without "tên là" prefix).
+    if "patient_name" not in slots:
+        words = utterance.strip().split()
+        if 2 <= len(words) <= 4 and all(w and w[0].isupper() for w in words):
+            slots["patient_name"] = " ".join(words)
 
     return slots

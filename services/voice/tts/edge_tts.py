@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
-from typing import Any
+from collections.abc import AsyncGenerator
+
+from tts.params import TTSParams
 
 logger = logging.getLogger(__name__)
 
@@ -22,17 +24,35 @@ class EdgeTTS:
         self.rate = rate
         logger.info("EdgeTTS ready (voice=%s)", voice)
 
-    async def synthesize(self, text: str) -> bytes:
+    def _effective_rate(self, params: TTSParams | None) -> str:
+        if params is not None:
+            pct = round((params.speaking_rate - 1.0) * 100)
+            sign = "+" if pct >= 0 else ""
+            return f"{sign}{pct}%"
+        return self.rate
+
+    async def synthesize(self, text: str, params: TTSParams | None = None) -> bytes:
         """Return 16-bit 8kHz mono PCM bytes.
 
         Runs edge-tts in a separate thread with its own event loop to avoid
         conflicts with the uvicorn event loop (aiohttp incompatibility).
         """
-        voice, rate = self.voice, self.rate
+        voice = self.voice
+        rate = self._effective_rate(params)
         mp3_bytes = await asyncio.to_thread(_run_edge_tts_sync, text, voice, rate)
         if not mp3_bytes:
             return b""
         return _mp3_to_pcm8k(mp3_bytes)
+
+    async def stream_synthesize(self, text: str, params: TTSParams | None = None) -> AsyncGenerator[bytes, None]:
+        """Synthesize full utterance then yield in one chunk (edge-tts is non-streaming)."""
+        pcm = await self.synthesize(text, params)
+
+        async def _gen() -> AsyncGenerator[bytes, None]:
+            if pcm:
+                yield pcm
+
+        return _gen()
 
 
 def _run_edge_tts_sync(text: str, voice: str, rate: str) -> bytes:

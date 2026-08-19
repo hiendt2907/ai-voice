@@ -50,9 +50,13 @@ _store_lock = asyncio.Lock()
 
 
 async def reload_from_api(api_url: str, campaign_id: str | None = None) -> int:
-    """Fetch all active NLU documents from NestJS and rebuild in-memory store."""
+    """Fetch all active NLU documents from NestJS and rebuild in-memory store.
+
+    Docs that have no embeddingJson in the DB are embedded locally (batch),
+    then patched back to the API so subsequent startups are instant.
+    """
     url = f"{api_url}/internal/nlu/export"
-    params = {}
+    params: dict[str, str] = {}
     if campaign_id:
         params["campaignId"] = campaign_id
 
@@ -62,6 +66,8 @@ async def reload_from_api(api_url: str, campaign_id: str | None = None) -> int:
         raw: list[dict] = resp.json()
 
     docs: list[NluDoc] = []
+    missing_embed: list[NluDoc] = []  # docs that need local embedding
+
     for item in raw:
         embedding: list[float] | None = None
         if item.get("embeddingJson"):
@@ -69,7 +75,7 @@ async def reload_from_api(api_url: str, campaign_id: str | None = None) -> int:
                 embedding = json.loads(item["embeddingJson"])
             except (ValueError, TypeError):
                 pass
-        docs.append(NluDoc(
+        doc = NluDoc(
             id=item["id"],
             type=item["type"],
             label=item["label"],
@@ -78,7 +84,44 @@ async def reload_from_api(api_url: str, campaign_id: str | None = None) -> int:
             embedding=embedding,
             campaign_id=item.get("campaignId"),
             script_id=item.get("scriptId"),
-        ))
+        )
+        docs.append(doc)
+        if embedding is None and doc.content:
+            missing_embed.append(doc)
+
+    # Embed missing docs locally (batch) and patch back to API
+    if missing_embed:
+        logger.info("Embedding %d NLU docs locally (no embeddingJson in DB)…", len(missing_embed))
+        try:
+            import dataclasses  # noqa: PLC0415
+            from rag.embedder import embed_passages  # noqa: PLC0415
+
+            loop = asyncio.get_running_loop()
+            contents = [d.content for d in missing_embed]
+            vecs: list[list[float]] = await loop.run_in_executor(
+                None, embed_passages, contents
+            )
+
+            async with httpx.AsyncClient(timeout=10) as patch_client:
+                for doc, vec in zip(missing_embed, vecs):
+                    # Update in the docs list
+                    for i, d in enumerate(docs):
+                        if d.id == doc.id:
+                            docs[i] = dataclasses.replace(d, embedding=vec)
+                            break
+                    # Persist back to API (non-fatal)
+                    try:
+                        await patch_client.patch(
+                            f"{api_url}/internal/nlu/{doc.id}/embedding",
+                            json={"embeddingJson": json.dumps(vec)},
+                            timeout=5,
+                        )
+                    except Exception as patch_exc:
+                        logger.debug("Could not persist embedding for %s: %s", doc.id, patch_exc)
+
+            logger.info("Embedded %d NLU docs locally", len(missing_embed))
+        except Exception as embed_exc:
+            logger.warning("Local NLU embedding failed (vector search degraded): %s", embed_exc)
 
     async with _store_lock:
         _store.clear()

@@ -53,6 +53,17 @@ def _build_tts(tts_cfg: TtsConfig, redis: object | None = None):  # type: ignore
         voice = tts_cfg.voice or "vi-VN-HoaiMyNeural"
         logger.info("TTS engine: edge-tts (voice=%s)", voice)
         return EdgeTTS(voice=voice)
+    if tts_cfg.engine == "remote":
+        from tts.remote_tts import RemoteTTS  # noqa: PLC0415
+        logger.info("TTS engine: remote inference server (%s)", settings.inference_server_url)
+        return RemoteTTS(
+            base_url=settings.inference_server_url,
+            token=settings.inference_server_token,
+        )
+    if tts_cfg.engine == "piper":
+        from tts.piper_tts import PiperTTS  # noqa: PLC0415
+        logger.info("TTS engine: piper (local ONNX)")
+        return PiperTTS()
     if tts_cfg.engine == "gwen-tts":
         from tts.synthesis import GwenTTS  # noqa: PLC0415
         logger.info("TTS engine: gwen-tts (model=%s)", settings.tts_model_id)
@@ -66,24 +77,53 @@ def _build_tts(tts_cfg: TtsConfig, redis: object | None = None):  # type: ignore
 
 
 def _build_stt(sys_cfg: SystemConfig, redis: object | None = None):  # type: ignore[return]
-    """Build STT engine from settings, preferring ElevenLabs when key is available."""
-    engine = settings.stt_engine
+    """Build STT engine from DB config (sys_cfg.stt.engine), fallback to env var via _fallback()."""
+    engine = sys_cfg.stt.engine
     api_key = sys_cfg.tts.elevenlabs_api_key or settings.elevenlabs_api_key
+
+    if engine == "remote":
+        if settings.use_streaming_stt:
+            from stt.streaming_remote_stt import StreamingRemoteSTT  # noqa: PLC0415
+            logger.info(
+                "STT engine: remote streaming (WS) inference server (%s)",
+                settings.inference_server_url,
+            )
+            return StreamingRemoteSTT(
+                base_url=settings.inference_server_url,
+                token=settings.inference_server_token,
+            )
+        from stt.remote_stt import RemoteSTT  # noqa: PLC0415
+        logger.info("STT engine: remote inference server (%s)", settings.inference_server_url)
+        return RemoteSTT(
+            base_url=settings.inference_server_url,
+            token=settings.inference_server_token,
+        )
+
+    if engine == "sensevoice":
+        from stt.sensevoice_stt import SenseVoiceSTT  # noqa: PLC0415
+        device = sys_cfg.stt.device or settings.stt_device
+        logger.info("STT engine: SenseVoice (device=%s)", device)
+        return SenseVoiceSTT(device=device)
 
     if engine == "elevenlabs" and api_key:
         from stt.elevenlabs_stt import ElevenLabsSTT  # noqa: PLC0415
         logger.info("STT engine: ElevenLabs Scribe")
         return ElevenLabsSTT(api_key=api_key, redis=redis)
 
+    # faster_whisper does not support MPS or float16 on CPU — normalise
+    fw_device = sys_cfg.stt.device if sys_cfg.stt.device not in ("mps",) else "cpu"
+    fw_compute = sys_cfg.stt.compute_type
+    if fw_device == "cpu" and fw_compute in ("float16", "float16_fp32"):
+        fw_compute = "int8"
     logger.info(
-        "STT engine: faster-whisper (model=%s device=%s)",
-        settings.stt_model, settings.stt_device,
+        "STT engine: faster-whisper (model=%s device=%s compute=%s)",
+        sys_cfg.stt.model_size, fw_device, fw_compute,
     )
     from stt.faster_whisper_stt import FasterWhisperSTT  # noqa: PLC0415
     return FasterWhisperSTT(
-        model_size=settings.stt_model,
-        device=settings.stt_device,
-        compute_type=settings.stt_compute_type,
+        model_size=sys_cfg.stt.model_size,
+        device=fw_device,
+        compute_type=fw_compute,
     )
 
 
@@ -139,6 +179,25 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     except Exception as exc:
         logger.warning("NLU store not loaded (will use fallbacks): %s", exc)
 
+    # Warm up Piper TTS singleton (eliminates 300ms first-call JIT penalty)
+    try:
+        # Probe: piper-tts is an optional extra (local-inference), absent in prod image.
+        from piper import PiperVoice as _PiperVoice  # noqa: F401,PLC0415
+
+        from tts.piper_tts import PiperTTS as _PiperTTS  # noqa: PLC0415
+        import asyncio as _asyncio  # noqa: PLC0415
+        _asyncio.create_task(_PiperTTS().warmup())
+    except Exception as _piper_exc:
+        logger.debug("Piper warmup skipped: %s", _piper_exc)
+
+    # Warm up LLM NLU model (eliminates cold-start latency on first call)
+    try:
+        from nlu.llm_resolver import warmup as _llm_warmup  # noqa: PLC0415
+        import asyncio as _asyncio2  # noqa: PLC0415
+        _asyncio2.create_task(_llm_warmup())
+    except Exception as _llm_exc:
+        logger.debug("LLM NLU warmup skipped: %s", _llm_exc)
+
     yield
 
     # Shutdown: close Redis connection
@@ -179,7 +238,7 @@ async def reload_config(request: Request) -> dict:  # type: ignore[type-arg]
         "ok": True,
         "tts_engine": new_cfg.tts.engine,
         "tts_voice": new_cfg.tts.elevenlabs_voice_id,
-        "stt_engine": "elevenlabs" if new_cfg.tts.elevenlabs_api_key else "faster-whisper",
+        "stt_engine": new_cfg.stt.engine,
     }
 
 

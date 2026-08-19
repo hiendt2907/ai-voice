@@ -1,0 +1,78 @@
+{
+  "scenario": "no_match_reprompt",
+  "script_id": "00000000-0000-0000-0000-000000000001",
+  "session_id": "golden-no_match_reprompt",
+  "turns": [
+    {
+      "turn_index": 0,
+      "caller_utterance": null,
+      "agent_text": "Dạ, Doctor Check xin nghe ạ. Em có thể hỗ trợ gì cho anh chị ạ?",
+      "step_ids": [
+        "greeting",
+        "greeting"
+      ],
+      "audio_chunks": 0,
+      "turn_meta": null,
+      "end_event": null,
+      "end_step_id": ""
+    },
+    {
+      "turn_index": 1,
+      "caller_utterance": "tôi muốn đặt lịch khám",
+      "agent_text": "Dạ, anh chị muốn đặt lịch khám vào ngày nào ạ?",
+      "step_ids": [
+        "collect_date"
+      ],
+      "audio_chunks": 0,
+      "turn_meta": {
+        "intent": "book_appointment",
+        "slots_new": {},
+        "step_from": "greeting",
+        "step_to": "collect_date",
+        "nlu_tier": "confident"
+      },
+      "end_event": null,
+      "end_step_id": ""
+    },
+    {
+      "turn_index": 2,
+      "caller_utterance": "asdkjaskdj lkjaslkdj",
+      "agent_text": "Dạ anh chị cho em biết ngày muốn đến khám ạ.",
+      "step_ids": [
+        "collect_date"
+      ],
+      "audio_chunks": 0,
+      "turn_meta": {
+        "intent": "confirm",
+        "slots_new": {},
+        "step_from": "collect_date",
+        "step_to": "collect_date",
+        "nlu_tier": "confident"
+      },
+      "end_event": null,
+      "end_step_id": ""
+    },
+    {
+      "turn_index": 3,
+      "caller_utterance": "ngày mai",
+      "agent_text": "Dạ, anh chị cho em biết giờ cụ thể muốn đặt ạ.",
+      "step_ids": [
+        "collect_time"
+      ],
+      "audio_chunks": 0,
+      "turn_meta": {
+        "intent": "check_availability",
+        "slots_new": {
+          "appointment_date": "thứ Năm, ngày 20/08/2026"
+        },
+        "step_from": "collect_date",
+        "step_to": "collect_time",
+        "nlu_tier": "clarify"
+      },
+      "end_event": null,
+      "end_step_id": ""
+    }
+  ],
+  "final_end_event": null,
+  "final_end_step_id": ""
+}

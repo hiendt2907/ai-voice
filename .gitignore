@@ -19,6 +19,7 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+.coverage
 
 # K8s secrets (example files only committed)
 deploy/k8s/config/secrets.yaml

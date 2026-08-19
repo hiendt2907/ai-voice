@@ -1,0 +1,42 @@
+{
+  "scenario": "handoff_to_staff",
+  "script_id": "00000000-0000-0000-0000-000000000001",
+  "session_id": "golden-handoff_to_staff",
+  "turns": [
+    {
+      "turn_index": 0,
+      "caller_utterance": null,
+      "agent_text": "Dạ, Doctor Check xin nghe ạ. Em có thể hỗ trợ gì cho anh chị ạ?",
+      "step_ids": [
+        "greeting",
+        "greeting"
+      ],
+      "audio_chunks": 0,
+      "turn_meta": null,
+      "end_event": null,
+      "end_step_id": ""
+    },
+    {
+      "turn_index": 1,
+      "caller_utterance": "cho tôi nói chuyện với nhân viên",
+      "agent_text": "Dạ anh chị muốn đặt lịch khám hay cần hỗ trợ gì ạ?",
+      "step_ids": [
+        "greeting"
+      ],
+      "audio_chunks": 0,
+      "turn_meta": {
+        "intent": "hours_inquiry",
+        "slots_new": {
+          "patient_name": "Tôi Nói Chuyện"
+        },
+        "step_from": "greeting",
+        "step_to": "greeting",
+        "nlu_tier": "clarify"
+      },
+      "end_event": null,
+      "end_step_id": ""
+    }
+  ],
+  "final_end_event": null,
+  "final_end_step_id": ""
+}

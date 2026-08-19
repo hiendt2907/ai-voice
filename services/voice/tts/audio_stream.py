@@ -13,6 +13,7 @@ from typing import Protocol
 import numpy as np
 
 from tts.prosody import PAUSE_DURATION_MS
+from tts.text_normalizer import normalize as _normalize
 
 _SAMPLE_RATE = 8000  # telephony 8kHz
 
@@ -64,15 +65,23 @@ class BeatsAudioStream:
 
             raw_text: str = beat.get("text", "")
             text = _TEMPLATE_VAR.sub(lambda m: slots.get(m.group(1), m.group(0)), raw_text)
+            text = _normalize(text)
 
             if not text.strip():
                 continue
 
             # Synthesize this beat
-            async for chunk in await self._tts.stream_synthesize(text):
-                if self._interrupt and self._interrupt.is_set():
-                    return
-                yield chunk
+            beat_gen = await self._tts.stream_synthesize(text)
+            try:
+                async for chunk in beat_gen:
+                    if self._interrupt and self._interrupt.is_set():
+                        return
+                    yield chunk
+            finally:
+                # Close promptly on barge-in instead of leaving a real
+                # streaming engine's (e.g. ElevenLabs) open connection to be
+                # cleaned up whenever this generator is GC'd.
+                await beat_gen.aclose()
 
             # Pause after beat
             pause_tier: str = beat.get("pause_after", "none")

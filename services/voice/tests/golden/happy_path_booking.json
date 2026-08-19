@@ -1,0 +1,166 @@
+{
+  "scenario": "happy_path_booking",
+  "script_id": "00000000-0000-0000-0000-000000000001",
+  "session_id": "golden-happy_path_booking",
+  "turns": [
+    {
+      "turn_index": 0,
+      "caller_utterance": null,
+      "agent_text": "Dạ, Doctor Check xin nghe ạ. Em có thể hỗ trợ gì cho anh chị ạ?",
+      "step_ids": [
+        "greeting",
+        "greeting"
+      ],
+      "audio_chunks": 0,
+      "turn_meta": null,
+      "end_event": null,
+      "end_step_id": ""
+    },
+    {
+      "turn_index": 1,
+      "caller_utterance": "tôi muốn đặt lịch khám",
+      "agent_text": "Dạ, anh chị muốn đặt lịch khám vào ngày nào ạ?",
+      "step_ids": [
+        "collect_date"
+      ],
+      "audio_chunks": 0,
+      "turn_meta": {
+        "intent": "book_appointment",
+        "slots_new": {},
+        "step_from": "greeting",
+        "step_to": "collect_date",
+        "nlu_tier": "confident"
+      },
+      "end_event": null,
+      "end_step_id": ""
+    },
+    {
+      "turn_index": 2,
+      "caller_utterance": "ngày mai",
+      "agent_text": "Dạ, anh chị cho em biết giờ cụ thể muốn đặt ạ.",
+      "step_ids": [
+        "collect_time"
+      ],
+      "audio_chunks": 0,
+      "turn_meta": {
+        "intent": "check_availability",
+        "slots_new": {
+          "appointment_date": "thứ Năm, ngày 20/08/2026"
+        },
+        "step_from": "collect_date",
+        "step_to": "collect_time",
+        "nlu_tier": "clarify"
+      },
+      "end_event": null,
+      "end_step_id": ""
+    },
+    {
+      "turn_index": 3,
+      "caller_utterance": "buổi sáng lúc 9 giờ",
+      "agent_text": "Dạ, anh chị giữ máy giúp em, để em kiểm tra chính xác giờ cho mình ạ. Dạ, hiện tại buổi sáng lúc 9 giờ ngày thứ Năm, ngày 20/08/2026 phòng khám vẫn còn trống lịch ạ, em đặt luôn cho mình nhé?",
+      "step_ids": [
+        "confirm_time_available",
+        "confirm_time_available",
+        "confirm_time_available"
+      ],
+      "audio_chunks": 0,
+      "turn_meta": {
+        "intent": "check_availability",
+        "slots_new": {
+          "time_of_day": "sáng",
+          "appointment_hour": "9",
+          "time_slot": "buổi sáng lúc 9 giờ"
+        },
+        "step_from": "collect_time",
+        "step_to": "confirm_time_available",
+        "nlu_tier": "confident"
+      },
+      "end_event": null,
+      "end_step_id": ""
+    },
+    {
+      "turn_index": 4,
+      "caller_utterance": "đúng rồi cứ đặt giúp tôi",
+      "agent_text": "Dạ, vậy anh chị cho em xin họ tên và số điện thoại để em tiến hành đặt lịch ạ.",
+      "step_ids": [
+        "collect_patient_info"
+      ],
+      "audio_chunks": 0,
+      "turn_meta": {
+        "intent": "confirm",
+        "slots_new": {},
+        "step_from": "confirm_time_available",
+        "step_to": "collect_patient_info",
+        "nlu_tier": "confident"
+      },
+      "end_event": null,
+      "end_step_id": ""
+    },
+    {
+      "turn_index": 5,
+      "caller_utterance": "Nguyễn Văn A",
+      "agent_text": "Dạ, anh chị cho em xin thêm số điện thoại để xác nhận lịch ạ.",
+      "step_ids": [
+        "collect_phone"
+      ],
+      "audio_chunks": 0,
+      "turn_meta": {
+        "intent": null,
+        "slots_new": {
+          "patient_name": "Nguyễn Văn A"
+        },
+        "step_from": "collect_patient_info",
+        "step_to": "collect_phone",
+        "nlu_tier": "handoff"
+      },
+      "end_event": null,
+      "end_step_id": ""
+    },
+    {
+      "turn_index": 6,
+      "caller_utterance": "0901234567",
+      "agent_text": "Dạ, em nhận thông tin rồi ạ, em xin xác nhận lại. Anh chị Nguyễn Văn A, số điện thoại 0901234567, đặt lịch khám vào buổi sáng lúc 9 giờ ngày thứ Năm, ngày 20/08/2026. Anh chị xem giúp em thông tin đã đúng chưa ạ?",
+      "step_ids": [
+        "confirm_booking",
+        "confirm_booking",
+        "confirm_booking",
+        "confirm_booking",
+        "confirm_booking"
+      ],
+      "audio_chunks": 0,
+      "turn_meta": {
+        "intent": "goodbye",
+        "slots_new": {
+          "patient_phone": "0901234567"
+        },
+        "step_from": "collect_phone",
+        "step_to": "confirm_booking",
+        "nlu_tier": "clarify"
+      },
+      "end_event": null,
+      "end_step_id": ""
+    },
+    {
+      "turn_index": 7,
+      "caller_utterance": "đúng rồi",
+      "agent_text": "Dạ, em đặt lịch cho mình xong rồi ạ. Phòng khám sẽ nhắn tin xác nhận lịch hẹn tới số 0901234567 trước ngày khám ạ. Anh chị cần em hỗ trợ gì thêm không ạ?",
+      "step_ids": [
+        "booking_success",
+        "booking_success",
+        "booking_success"
+      ],
+      "audio_chunks": 0,
+      "turn_meta": {
+        "intent": "confirm",
+        "slots_new": {},
+        "step_from": "confirm_booking",
+        "step_to": "booking_success",
+        "nlu_tier": "confident"
+      },
+      "end_event": null,
+      "end_step_id": ""
+    }
+  ],
+  "final_end_event": null,
+  "final_end_step_id": ""
+}

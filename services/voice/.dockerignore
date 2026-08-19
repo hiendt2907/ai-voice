@@ -1,0 +1,9 @@
+.venv
+__pycache__
+**/*.pyc
+.pytest_cache
+.coverage
+tests
+.env
+# Local AI model weights (Piper ONNX etc.) — only needed by the inference server
+models/

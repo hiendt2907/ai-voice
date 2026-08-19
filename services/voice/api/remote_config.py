@@ -24,11 +24,13 @@ class AiConfig:
 
 @dataclass(frozen=True)
 class SttConfig:
-    model_size: str
-    device: str
-    compute_type: str
-    language: str
-    end_of_utterance_silence_ms: int
+    engine: str = "faster_whisper"  # "faster_whisper" | "elevenlabs" | "sensevoice"
+    model_size: str = "small"
+    device: str = "cpu"
+    compute_type: str = "int8"
+    language: str = "vi"
+    end_of_utterance_silence_ms: int = 400
+
 
 
 @dataclass(frozen=True)
@@ -40,10 +42,31 @@ class TtsConfig:
     elevenlabs_api_key: str
     elevenlabs_voice_id: str
     elevenlabs_model_id: str
-    elevenlabs_stability: float = 0.6
+    elevenlabs_stability: float = 0.71
     elevenlabs_similarity_boost: float = 0.75
-    elevenlabs_style: float = 0.3
+    elevenlabs_style: float = 0.0
     elevenlabs_use_speaker_boost: bool = True
+    elevenlabs_speed: float = 1.0
+    fallback_order: list[str] = None  # type: ignore[assignment]
+    daily_char_quota: int = 0
+    circuit_breaker_failures: int = 3
+    circuit_breaker_reset_secs: int = 300
+
+    def __post_init__(self) -> None:
+        if self.fallback_order is None:
+            object.__setattr__(self, "fallback_order", ["local", "edge-tts", "elevenlabs"])
+
+
+@dataclass(frozen=True)
+class ConversationConfig:
+    enabled: bool = False
+    ollama_model: str = "qwen2.5:3b"
+    system_prompt: str = ""
+    max_history_turns: int = 5
+    temperature: float = 0.3
+    sentiment_enabled: bool = False
+    kb_grounding_enabled: bool = True
+    sentence_split_min_chars: int = 30
 
 
 @dataclass(frozen=True)
@@ -70,6 +93,11 @@ class SystemConfig:
     tts: TtsConfig
     notify: NotifyConfig
     voice_worker: VoiceWorkerConfig
+    conversation: ConversationConfig = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.conversation is None:
+            object.__setattr__(self, "conversation", ConversationConfig())
 
 
 def _parse(raw: dict) -> SystemConfig:  # type: ignore[type-arg]
@@ -78,6 +106,7 @@ def _parse(raw: dict) -> SystemConfig:  # type: ignore[type-arg]
     tts_raw = raw.get("tts", {})
     notify_raw = raw.get("notify", {})
     vw_raw = raw.get("voiceWorker", {})
+    conv_raw = raw.get("conversation", {})
 
     return SystemConfig(
         ai=AiConfig(
@@ -88,6 +117,7 @@ def _parse(raw: dict) -> SystemConfig:  # type: ignore[type-arg]
             fallback_to_substring=bool(ai_raw.get("fallbackToSubstring", True)),
         ),
         stt=SttConfig(
+            engine=stt_raw.get("engine", "faster_whisper"),
             model_size=stt_raw.get("modelSize", "small"),
             device=stt_raw.get("device", "cpu"),
             compute_type=stt_raw.get("computeType", "int8"),
@@ -100,12 +130,17 @@ def _parse(raw: dict) -> SystemConfig:  # type: ignore[type-arg]
             sample_rate=int(tts_raw.get("sampleRate", 8000)),
             speed_factor=float(tts_raw.get("speedFactor", 1.0)),
             elevenlabs_api_key=tts_raw.get("elevenlabsApiKey") or "",
-            elevenlabs_voice_id=tts_raw.get("elevenlabsVoiceId") or "hpp4J3VqNfWAUOO0d1Us",
-            elevenlabs_model_id=tts_raw.get("elevenlabsModelId") or "eleven_turbo_v2_5",
-            elevenlabs_stability=float(tts_raw.get("elevenlabsStability") or 0.6),
+            elevenlabs_voice_id=tts_raw.get("elevenlabsVoiceId") or "d5HVupAWCwe4e6GvMCAL",
+            elevenlabs_model_id=tts_raw.get("elevenlabsModelId") or "eleven_v3",
+            elevenlabs_stability=float(tts_raw.get("elevenlabsStability") or 0.71),
             elevenlabs_similarity_boost=float(tts_raw.get("elevenlabsSimilarityBoost") or 0.75),
-            elevenlabs_style=float(tts_raw.get("elevenlabsStyleExaggeration") or 0.3),
+            elevenlabs_style=float(tts_raw.get("elevenlabsStyleExaggeration") or 0.0),
             elevenlabs_use_speaker_boost=bool(tts_raw.get("elevenlabsUseSpeakerBoost", True)),
+            elevenlabs_speed=float(tts_raw.get("elevenlabsSpeed") or 1.0),
+            fallback_order=tts_raw.get("engineFallbackOrder") or ["edge-tts", "elevenlabs"],
+            daily_char_quota=int(tts_raw.get("elevenlabsDailyCharQuota") or 0),
+            circuit_breaker_failures=int(tts_raw.get("circuitBreakerFailures") or 3),
+            circuit_breaker_reset_secs=int(tts_raw.get("circuitBreakerResetSecs") or 300),
         ),
         notify=NotifyConfig(
             platform=notify_raw.get("platform", "telegram"),
@@ -119,6 +154,16 @@ def _parse(raw: dict) -> SystemConfig:  # type: ignore[type-arg]
             internal_url=vw_raw.get("internalUrl", "http://localhost:8000"),
             max_concurrent_sessions=int(vw_raw.get("maxConcurrentSessions", 10)),
             session_cache_ttl_seconds=int(vw_raw.get("sessionCacheTtlSeconds", 3600)),
+        ),
+        conversation=ConversationConfig(
+            enabled=bool(conv_raw.get("enabled", False)),
+            ollama_model=conv_raw.get("ollamaModel", "qwen2.5:3b"),
+            system_prompt=conv_raw.get("systemPrompt", ""),
+            max_history_turns=int(conv_raw.get("maxHistoryTurns", 5)),
+            temperature=float(conv_raw.get("temperature", 0.3)),
+            sentiment_enabled=bool(conv_raw.get("sentimentEnabled", False)),
+            kb_grounding_enabled=bool(conv_raw.get("kbGroundingEnabled", True)),
+            sentence_split_min_chars=int(conv_raw.get("sentenceSplitMinChars", 30)),
         ),
     )
 
@@ -134,6 +179,7 @@ def _fallback(settings: Settings) -> SystemConfig:
             fallback_to_substring=True,
         ),
         stt=SttConfig(
+            engine=settings.stt_engine,
             model_size=settings.stt_model,
             device=settings.stt_device,
             compute_type=settings.stt_compute_type,
@@ -152,6 +198,7 @@ def _fallback(settings: Settings) -> SystemConfig:
             elevenlabs_similarity_boost=settings.elevenlabs_similarity_boost,
             elevenlabs_style=settings.elevenlabs_style,
             elevenlabs_use_speaker_boost=settings.elevenlabs_use_speaker_boost,
+            elevenlabs_speed=settings.elevenlabs_speed,
         ),
         notify=NotifyConfig(
             platform=settings.notify_platform,
@@ -166,6 +213,7 @@ def _fallback(settings: Settings) -> SystemConfig:
             max_concurrent_sessions=10,
             session_cache_ttl_seconds=3600,
         ),
+        conversation=ConversationConfig(),
     )
 
 

@@ -35,6 +35,8 @@ class TurnResult:
     state: SessionState
     suggested_filler: str = "thinking"
     filler_slot_value: str = ""
+    nlu_confidence: float = 0.0
+    nlu_tier: str = ""
 
 
 _TEMPLATE_VAR = re.compile(r"\{\{(\w+)\}\}")
@@ -327,26 +329,47 @@ async def async_process_turn(
     utterance: str | None,
     nlu: "Any | None" = None,
 ) -> TurnResult:
-    """Async version with vector NLU + multi-slot extraction + confidence gradient."""
+    """Async version with stateful LLM NLU (primary) + vector NLU (fallback)."""
     if not utterance:
         return process_turn(state, script_body, utterance)
 
-    # Vector NLU path
+    # Extract current step context — used by both LLM and vector NLU
+    from runtime.fsm import extract_step_intents  # noqa: PLC0415
+    _steps_map = _step_index(script_body)
+    _cur_step = _steps_map.get(state.current_step_id, {})
+    _expected_intents = extract_step_intents(_cur_step)
+    campaign_id: str | None = script_body.get("campaignId")
+
+    # Primary: stateful LLM resolver — passes full conversation history
+    nlu_result = None
     try:
-        import asyncio  # noqa: PLC0415
-        from rag.embedder import embed_query  # noqa: PLC0415
-        from nlu.intent_resolver import resolve as nlu_resolve, CONFIDENT_THRESHOLD, CLARIFY_THRESHOLD  # noqa: PLC0415
+        from nlu.llm_resolver import resolve_with_llm  # noqa: PLC0415
+        nlu_result = await resolve_with_llm(utterance, state, script_body, _expected_intents)
+    except Exception as llm_exc:
+        logger.info("LLM NLU unavailable [%s] %r, falling back to vector NLU", type(llm_exc).__name__, llm_exc)
 
-        loop = asyncio.get_running_loop()
-        query_emb = await loop.run_in_executor(None, embed_query, utterance)
-        campaign_id: str | None = script_body.get("campaignId")
-        nlu_result = nlu_resolve(utterance, query_emb, campaign_id=campaign_id)
+    # Fallback: per-turn vector NLU (embedding similarity search)
+    if nlu_result is None:
+        try:
+            import asyncio  # noqa: PLC0415
+            from rag.embedder import embed_query  # noqa: PLC0415
+            from nlu.intent_resolver import resolve as nlu_resolve  # noqa: PLC0415
 
-        logger.debug(
-            "NLU: intent=%s confidence=%.3f tier=%s",
-            nlu_result.intent, nlu_result.confidence, nlu_result.tier,
-        )
+            loop = asyncio.get_running_loop()
+            query_emb = await loop.run_in_executor(None, embed_query, utterance)
+            nlu_result = nlu_resolve(
+                utterance, query_emb,
+                campaign_id=campaign_id,
+                expected_intents=_expected_intents or None,
+            )
+            logger.debug(
+                "Vector NLU: intent=%s confidence=%.3f tier=%s",
+                nlu_result.intent, nlu_result.confidence, nlu_result.tier,
+            )
+        except Exception as vec_exc:
+            logger.warning("Vector NLU also failed: %s", vec_exc)
 
+    if nlu_result is not None:
         # Convert to MatchResult for the existing FSM engine
         override = MatchResult(
             intent=nlu_result.intent,
@@ -354,6 +377,8 @@ async def async_process_turn(
             confidence=nlu_result.confidence,
         )
         result = _process_with_match(state, script_body, utterance, override)
+        import dataclasses as _dc  # noqa: PLC0415
+        result = _dc.replace(result, nlu_confidence=nlu_result.confidence, nlu_tier=nlu_result.tier)
 
         # Phase E: advance past steps whose slots are now filled (multi-slot)
         if nlu_result.slots and result.next_step_id is not None:
@@ -373,7 +398,8 @@ async def async_process_turn(
                 )
 
         # Phase D: confidence gradient — low confidence → trigger expert handoff
-        if nlu_result.tier == "handoff" and not result.is_completed and not result.is_handoff:
+        # Skip when slots were extracted: slot-fill utterances naturally have low intent confidence
+        if nlu_result.tier == "handoff" and not nlu_result.slots and not result.is_completed and not result.is_handoff:
             steps_map = _step_index(script_body)
             current_step = steps_map.get(result.state.current_step_id, {})
             fallback_goto = current_step.get("fallback_goto")
@@ -383,21 +409,6 @@ async def async_process_turn(
                 result = dataclasses.replace(result, state=advanced, next_step_id=fallback_goto, is_handoff=True)
 
         return result
-
-    except Exception as exc:
-        logger.warning("Vector NLU failed, using fallback matcher: %s", exc)
-
-    # Fallback: LLM NLU (if configured)
-    if nlu is not None:
-        intents: list[dict] = script_body.get("intents", [])
-        try:
-            from llm.nlu import LLMNLUClassifier  # noqa: PLC0415
-            if isinstance(nlu, LLMNLUClassifier):
-                llm_result = await nlu.classify_intent(utterance, intents, dict(state.slots))
-                override = MatchResult(intent=llm_result.intent, slots=llm_result.slots, confidence=llm_result.confidence)
-                return _process_with_match(state, script_body, utterance, override)
-        except Exception as exc2:
-            logger.warning("LLM NLU also failed: %s", exc2)
 
     # Final fallback: sync substring matcher
     return process_turn(state, script_body, utterance)

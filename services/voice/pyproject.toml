@@ -10,7 +10,6 @@ dependencies = [
     "redis[asyncio]>=5.2.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
-    "faster-whisper>=1.1.0",
     "numpy>=2.2.0",
     "soundfile>=0.12.1",
     "scipy>=1.13.0",
@@ -18,14 +17,24 @@ dependencies = [
     "python-multipart>=0.0.12",
     # Anthropic SDK for Claude NLU (optional — fallback to Ollama if not installed)
     "anthropic>=0.40.0",
-    # TTS: gwen-tts (Qwen3-TTS finetuned on Vietnamese)
-    "qwen-tts>=0.1.0",
     # RAG: lightweight ONNX-based embeddings (multilingual-e5-large)
     "fastembed>=0.3.0",
     "edge-tts>=7.2.8",
+    "sounddevice>=0.5.5",
 ]
 
 [project.optional-dependencies]
+# Heavy local AI models — NOT installed in the production (GCP) image.
+# They run on the separate inference server (see inference_server.py);
+# the worker reaches them via RemoteTTS / RemoteSTT over HTTP.
+local-inference = [
+    "faster-whisper>=1.1.0",
+    "qwen-tts>=0.1.0",
+    "piper-tts>=1.4.2",
+]
+sensevoice = [
+    "funasr>=1.2.0",
+]
 dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
@@ -39,6 +48,9 @@ dev = [
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "--cov=tts --cov=runtime --cov=stt --cov=audio --cov=llm --cov=notify --cov=cloudfone --cov=rag --cov=metrics --cov-report=term-missing --cov-fail-under=80"
+markers = [
+    "golden: live-infra golden-transcript regression tests (require the voice worker running at localhost:8000); auto-skipped when unreachable",
+]
 
 [tool.coverage.run]
 omit = [
@@ -49,6 +61,7 @@ omit = [
     "*/llm/client.py",                # ClaudeNLUClient requires Anthropic API key
     "*/cloudfone/ods_client.py",      # ODS schema pending (blocked)
     "*/rag/embedder.py",              # requires fastembed model download
+    "*/stt/sensevoice_stt.py",        # requires funasr + torch (~1.5GB)
 ]
 
 [tool.ruff]

@@ -38,6 +38,7 @@ def resolve(
     utterance: str,
     query_embedding: list[float],
     campaign_id: str | None = None,
+    expected_intents: list[str] | None = None,
 ) -> NluResult:
     """Resolve intent from utterance using vector search.
 
@@ -54,6 +55,13 @@ def resolve(
 
     # Extract structured slots unconditionally (regex-based, fast)
     extracted_slots = extract_slots(utterance)
+
+    # Context-guided shortcut: when the step only accepts specific intents,
+    # resolve affirmative/negative signals directly without vector search.
+    if expected_intents:
+        guided = _resolve_with_context(utterance, extracted_slots, expected_intents)
+        if guided is not None:
+            return guided
 
     # Vector search for intent
     matches = search_intents(query_embedding, top_k=3, campaign_id=campaign_id)
@@ -129,6 +137,48 @@ _INQUIRY_MARKERS = re.compile(
     r"|mất bao lâu|thủ tục|gồm những gì|có những gì|bảo hiểm|được không|như thế nào)\b",
     re.IGNORECASE,
 )
+# ── Context-guided intent resolution ────────────────────────────────────────
+
+_AFFIRM_RE = re.compile(
+    r"^\s*(đúng|được|ok|vâng|ừ|ừm|oke|okay|yes|có|đồng ý|chính xác|đúng rồi|đúng vậy|đúng ạ|đúng thôi|chính xác rồi)\b",
+    re.IGNORECASE,
+)
+_NEGATE_RE = re.compile(
+    r"^\s*(không|không ạ|chưa đúng|sai|sai rồi|không phải|nope|no|thay đổi|đổi|sửa)",
+    re.IGNORECASE,
+)
+
+
+def _resolve_with_context(
+    utterance: str,
+    slots: dict[str, str],
+    expected_intents: list[str],
+) -> NluResult | None:
+    """Return a context-guided result when expected_intents constrains resolution.
+
+    Only resolves if:
+    - The utterance clearly starts with an affirmative or negative signal, AND
+    - The matching polarity intent (confirm/deny) is in expected_intents.
+
+    Returns None to fall through to normal vector search.
+    """
+    if "confirm" in expected_intents and _AFFIRM_RE.match(utterance):
+        return NluResult(
+            intent="confirm",
+            slots=slots,
+            confidence=0.88,
+            tier="confident",
+            top_matches=[("confirm", 0.88)],
+        )
+    if "deny" in expected_intents and _NEGATE_RE.match(utterance):
+        return NluResult(
+            intent="deny",
+            slots=slots,
+            confidence=0.88,
+            tier="confident",
+            top_matches=[("deny", 0.88)],
+        )
+    return None
 
 
 def _infer_from_context(utterance_lower: str, slots: dict[str, str]) -> str | None:

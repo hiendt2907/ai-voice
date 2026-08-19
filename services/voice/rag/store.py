@@ -189,12 +189,14 @@ async def search(
         result = await _search_redis(
             query_embedding, gender, linked_kb_tags, max_threshold, campaign_id
         )
-        if result is not None and query_text and campaign_id:
-            await redis_vector.cache_set(
-                _redis, campaign_id, query_text,
-                {"article_id": result.article.id, "score": result.score},
-            )
-        return result
+        if result is not None:
+            if query_text:
+                await redis_vector.cache_set(
+                    _redis, campaign_id, query_text,
+                    {"article_id": result.article.id, "score": result.score},
+                )
+            return result
+        # Redis returned no match (campaign key mismatch or below threshold) → in-memory fallback
 
     return _search_inmemory(query_embedding, gender, linked_kb_tags, top_k, max_threshold, campaign_id)
 

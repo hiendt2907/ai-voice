@@ -76,6 +76,21 @@ def evaluate_condition(condition: str, intent: str | None, slots: dict[str, str]
     return _eval_atom(condition, intent, slots)
 
 
+_INTENT_EQ_SEARCH = re.compile(r"intent\s*==\s*['\"]([^'\"]+)['\"]")
+
+
+def extract_step_intents(step: dict) -> list[str]:
+    """Return the list of intents accepted by this step's transitions."""
+    intents: list[str] = []
+    for t in step.get("transitions", []):
+        when = t.get("when", "")
+        for m in _INTENT_EQ_SEARCH.finditer(when):
+            intent = m.group(1)
+            if intent not in intents:
+                intents.append(intent)
+    return intents
+
+
 def resolve_next_step(
     step: dict,
     intent: str | None,

@@ -22,6 +22,7 @@ class STTResult:
     confidence: float
     is_final: bool
     language: str = "vi"
+    emotion: str | None = None
 
 
 class FasterWhisperSTT:
@@ -38,11 +39,26 @@ class FasterWhisperSTT:
         model_size: str = "small",
         device: str = "cpu",
         compute_type: str = "int8",
+        num_workers: int = 1,
     ) -> None:
+        """`num_workers` is CTranslate2's internal concurrency limit for this
+        model instance (default 1, matching faster-whisper's own default).
+        With num_workers=1, two concurrent `transcribe()` calls from
+        different Python threads do NOT run in parallel — the second blocks
+        inside CT2 until the first finishes, regardless of how many threads
+        or executors dispatch them. The streaming STT gateway (`/ws/stt` in
+        `inference_server.py`) needs num_workers >= 2 so a `stt.final`
+        decode is never serialized behind an in-flight `stt.partial`
+        re-decode (see the fix for that in `inference_server.py`)."""
         from faster_whisper import WhisperModel  # lazy import — large dep
 
-        self._model = WhisperModel(model_size, device=device, compute_type=compute_type)
-        logger.info("FasterWhisperSTT loaded: %s on %s (%s)", model_size, device, compute_type)
+        self._model = WhisperModel(
+            model_size, device=device, compute_type=compute_type, num_workers=num_workers
+        )
+        logger.info(
+            "FasterWhisperSTT loaded: %s on %s (%s, num_workers=%d)",
+            model_size, device, compute_type, num_workers,
+        )
 
     def transcribe_pcm(self, pcm_bytes: bytes, sample_rate: int = 8000) -> STTResult:
         """Transcribe raw int16 PCM bytes → STTResult.

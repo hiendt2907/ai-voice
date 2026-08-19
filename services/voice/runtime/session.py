@@ -31,6 +31,7 @@ class SessionState:
     status: Literal["active", "handoff", "completed"] = "active"
     transcript: tuple[TranscriptEntry, ...] = field(default_factory=tuple)
     pending_questions: tuple[PendingQuestion, ...] = field(default_factory=tuple)
+    emotion_history: tuple[str, ...] = field(default_factory=tuple)
 
     def with_step(self, step_id: str) -> "SessionState":
         return replace(self, current_step_id=step_id)
@@ -50,6 +51,16 @@ class SessionState:
     def without_pending_question(self, question_id: str) -> "SessionState":
         remaining = tuple(q for q in self.pending_questions if q.question_id != question_id)
         return replace(self, pending_questions=remaining)
+
+    def with_emotion(self, label: str, max_keep: int = 5) -> "SessionState":
+        trimmed = self.emotion_history[-(max_keep - 1):]
+        return replace(self, emotion_history=(*trimmed, label))
+
+    def current_emotion(self) -> str:
+        recent = self.emotion_history[-3:]
+        if not recent:
+            return "neutral"
+        return max(set(recent), key=recent.count)
 
     def increment_no_match(self, step_id: str) -> "SessionState":
         counts = {**self.no_match_counts, step_id: self.no_match_counts.get(step_id, 0) + 1}
