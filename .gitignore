@@ -55,3 +55,7 @@ output/
 # Model weights — large, downloadable at setup time; never commit
 *.onnx
 services/voice/models/
+# Exception: Silero VAD is a tiny (~2.3MB), pinned, versioned asset — small
+# enough to vendor like source, unlike the multi-hundred-MB Piper weights
+# above (which stay setup-time downloads).
+!services/voice/stt/models/silero_vad.onnx

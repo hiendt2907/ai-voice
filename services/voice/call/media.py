@@ -55,9 +55,15 @@ class MediaRouter:
     """Owns at most one `AudioPipeline` (or, when `use_streaming_stt` is on,
     one `StreamingRemoteSTT` session) for the lifetime of a call."""
 
-    def __init__(self, session_id: str, egress: "EgressSender | None" = None) -> None:
+    def __init__(
+        self,
+        session_id: str,
+        egress: "EgressSender | None" = None,
+        use_silero_vad: bool = False,
+    ) -> None:
         self.session_id = session_id
         self.egress = egress
+        self.use_silero_vad = use_silero_vad
         self.pipeline: AudioPipeline | None = None
         # Phase 2 streaming STT path — only populated when `start()` is
         # called with a StreamingRemoteSTT instance (feature-flagged off by
@@ -92,7 +98,7 @@ class MediaRouter:
         if isinstance(stt, StreamingRemoteSTT):
             return self._start_streaming(stt, on_transcript, on_pipeline_failure, turn_id_provider)
 
-        self.pipeline = AudioPipeline(stt)
+        self.pipeline = AudioPipeline(stt, use_silero_vad=self.use_silero_vad)
 
         async def _drain(p: AudioPipeline) -> None:
             # D2 fix, preserved: RemoteSTT raises when the inference tier
@@ -129,12 +135,12 @@ class MediaRouter:
         whole call, `turn_id` reused from `TurnOrchestrator.turn` (no new
         turn concept introduced — see stt/streaming_remote_stt.py).
 
-        Local VAD (`stt/vad.py`, unchanged — Silero swap is a separate task)
-        decides turn boundaries (`start_turn`/`end_turn`) and doubles as the
-        barge-in signal, same as the AudioPipeline path above.
+        Local VAD (`stt/vad.py`) decides turn boundaries
+        (`start_turn`/`end_turn`) and doubles as the barge-in signal, same
+        as the AudioPipeline path above.
         """
         self._streaming_stt = stt
-        self._streaming_vad = VADDetector(sample_rate=8000)
+        self._streaming_vad = VADDetector(sample_rate=8000, use_silero=self.use_silero_vad)
         self._streaming_queue = asyncio.Queue()
         if turn_id_provider is not None:
             self._turn_id_provider = turn_id_provider

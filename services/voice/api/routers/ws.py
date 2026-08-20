@@ -163,7 +163,9 @@ async def call_ws(ws: WebSocket, script_id: str = "", provider: str = "cloudfone
         )
 
     nlu = _build_nlu()
-    media = MediaRouter(session_id="", egress=egress)  # session_id filled in on START
+    media = MediaRouter(
+        session_id="", egress=egress, use_silero_vad=_settings.use_silero_vad
+    )  # session_id filled in on START
     dialogue = DialogueEngine(
         egress, ctx,
         conv_engine=conv_engine, tts_chain=tts_chain, tts=tts,

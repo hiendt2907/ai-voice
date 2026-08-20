@@ -115,6 +115,7 @@ STREAM_PARTIAL_DECODE_ENABLED = os.getenv("STREAM_PARTIAL_DECODE_ENABLED", "0") 
 STREAM_VAD_SILENCE_MS = int(os.getenv("STREAM_VAD_SILENCE_MS", "400"))
 STREAM_VAD_MIN_SPEECH_MS = int(os.getenv("STREAM_VAD_MIN_SPEECH_MS", "200"))
 STREAM_SAMPLE_RATE = int(os.getenv("STREAM_SAMPLE_RATE", "8000"))
+STREAM_VAD_USE_SILERO = os.getenv("STREAM_VAD_USE_SILERO", "0") not in ("0", "false", "False")
 # NOTE on pre-roll (lost first words, e.g. "Dạ" getting cut): the fix for
 # that lives client-side in `call/media.py::MediaRouter._start_streaming` —
 # this server only ever sees audio the client already decided to forward
@@ -297,6 +298,7 @@ class _StreamTurn:
             sample_rate=sample_rate,
             silence_threshold_ms=STREAM_VAD_SILENCE_MS,
             min_speech_duration_ms=STREAM_VAD_MIN_SPEECH_MS,
+            use_silero=STREAM_VAD_USE_SILERO,
         )
         self.decoding = False
         self.last_decode_at = 0.0

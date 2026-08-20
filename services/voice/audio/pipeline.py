@@ -43,11 +43,14 @@ class AudioPipeline:
         stt: Any,
         sample_rate: int = 8000,
         is_ulaw: bool = True,
+        use_silero_vad: bool = False,
     ) -> None:
         self._stt = stt
         self._sample_rate = sample_rate
         self._is_ulaw = is_ulaw
-        self._vad = VADDetector(silence_threshold_ms=400, sample_rate=sample_rate)
+        self._vad = VADDetector(
+            silence_threshold_ms=400, sample_rate=sample_rate, use_silero=use_silero_vad
+        )
         self._pcm_buffer: list[bytes] = []
         self._frame_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._stt_is_async = inspect.iscoroutinefunction(getattr(stt, "transcribe_pcm", None))

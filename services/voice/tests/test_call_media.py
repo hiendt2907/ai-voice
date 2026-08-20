@@ -494,3 +494,87 @@ async def test_flush_without_egress_is_a_noop():
     router = MediaRouter(session_id="s1")
 
     await router.flush(turn=1)  # must not raise
+
+
+# ── real-audio barge-in → flush, end to end ─────────────────────────────────
+# Closes the gap noted in memory (barge-in-flush-implemented.md): the flush
+# wiring above was only ever exercised with synthetic constant-amplitude
+# frames or fakes. This feeds an actual recorded WAV (real speech energy
+# envelope, real silence) through the real `AudioPipeline`/`VADDetector` —
+# the same objects `ws.py` uses in production — and confirms it both (a)
+# reports barge-in mid-utterance and (b) that a `flush()` call in response
+# reaches the egress, mirroring the exact call site in `api/routers/ws.py`.
+
+
+def _wav_frames_b64(path: str, frame_ms: int = 20, sample_rate: int = 8000) -> list[str]:
+    import wave
+
+    with wave.open(path, "rb") as wf:
+        assert wf.getframerate() == sample_rate, "test WAV must already be 8kHz"
+        raw = wf.readframes(wf.getnframes())
+    n_per_frame = int(sample_rate * frame_ms / 1000)
+    bytes_per_frame = n_per_frame * 2  # int16
+    frames = []
+    for i in range(0, len(raw) - bytes_per_frame + 1, bytes_per_frame):
+        pcm = np.frombuffer(raw[i : i + bytes_per_frame], dtype=np.int16)
+        frames.append(base64.b64encode(pcm_to_ulaw(pcm)).decode())
+    return frames
+
+
+class _NullSTT:
+    """`transcribe_pcm` is only reached if end-of-utterance fires during the
+    test, which it shouldn't — the test breaks out on barge-in first."""
+
+    async def transcribe_pcm(self, pcm: bytes, sample_rate: int) -> object:  # pragma: no cover
+        raise AssertionError("transcribe should not be reached in this test")
+
+
+@pytest.mark.asyncio
+async def test_real_audio_barge_in_triggers_flush_through_egress():
+    wav_path = "bench/stt_audio/u01.wav"
+    frames = _wav_frames_b64(wav_path)
+    assert frames, f"no frames loaded from {wav_path}"
+
+    egress = _FakeEgress()
+    router = MediaRouter(session_id="s1", egress=egress)  # type: ignore[arg-type]
+
+    async def _on_transcript(text: str, emotion: str | None) -> None:
+        pass
+
+    async def _on_pipeline_failure() -> None:
+        pass
+
+    # router.start() is what production (`ws.py`) calls — it builds the real
+    # AudioPipeline AND spawns the background task that actually runs
+    # `pipeline.process()`. Without that task running, `feed()` only
+    # enqueues frames and the VAD inside `process()` never sees them, so
+    # `is_speech_active` would never move regardless of the audio content.
+    task = router.start(_NullSTT(), _on_transcript, _on_pipeline_failure)
+    assert task is not None
+    router.on_tts_start()  # agent is "speaking" — barge-in window is open
+
+    try:
+        # Half-duplex suppression (VADDetector.is_half_duplex_suppressed)
+        # gates on real wall-clock time since on_tts_start(), not simulated
+        # audio position — frames must actually be paced in real time for
+        # the 300ms window to elapse, same as live audio_frame delivery in
+        # production.
+        barge_in_frame_index = None
+        for i, frame in enumerate(frames):
+            await asyncio.sleep(0.02)
+            if router.feed(frame, tts_active=True):
+                barge_in_frame_index = i
+                break
+
+        assert barge_in_frame_index is not None, (
+            f"real speech in {wav_path} never registered as barge-in — "
+            "VAD energy threshold or half-duplex suppression regressed"
+        )
+
+        await router.flush(turn=7)
+
+        assert egress.sent == [{"event": "flush", "turn": 7}]
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task

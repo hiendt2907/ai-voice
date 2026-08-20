@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # the Phase 2 task 1 scope; RemoteSTT/AudioPipeline remains the
     # production path until this has been validated.
     use_streaming_stt: bool = False
+    # Phase 2 (D538/D989): swap the bare RMS-energy VAD for neural Silero
+    # VAD (stt/silero_vad.py, onnxruntime-only — no torch dependency).
+    # Default OFF pending the same canary rollout as use_streaming_stt.
+    use_silero_vad: bool = False
     # ElevenLabs STT (shares key with TTS when using elevenlabs engine)
     # faster-whisper config (used when stt_engine == "faster_whisper")
     stt_model: str = "small"

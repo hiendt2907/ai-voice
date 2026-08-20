@@ -19,6 +19,10 @@ dependencies = [
     "anthropic>=0.40.0",
     # RAG: lightweight ONNX-based embeddings (multilingual-e5-large)
     "fastembed>=0.3.0",
+    # Silero VAD inference (stt/silero_vad.py) — onnxruntime only, no torch;
+    # already a transitive dep of fastembed above, declared explicitly here
+    # since we import it directly.
+    "onnxruntime>=1.17.0",
     "edge-tts>=7.2.8",
     "sounddevice>=0.5.5",
 ]
