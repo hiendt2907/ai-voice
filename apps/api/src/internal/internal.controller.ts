@@ -56,6 +56,14 @@ class CallEndedDto {
   endedAt?: string
 
   @IsOptional()
+  @IsString()
+  traceId?: string
+
+  @IsOptional()
+  @IsArray()
+  turnTraces?: Record<string, unknown>[]
+
+  @IsOptional()
   @IsObject()
   meta?: {
     bargeInCount?: number

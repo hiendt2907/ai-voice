@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
+import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity'
 import { Repository } from 'typeorm'
 import * as http from 'node:http'
 import * as https from 'node:https'
@@ -26,6 +27,10 @@ export interface CallEndedPayload {
   transcript?: Record<string, unknown>[]
   slots?: Record<string, string>
   finalStepId?: string
+  /** W3C trace id shared across every hop of the call. */
+  traceId?: string
+  /** One glassbox decision record per caller turn, in order. */
+  turnTraces?: Record<string, unknown>[]
   durationSeconds?: number
   startedAt?: string
   endedAt?: string
@@ -66,6 +71,7 @@ export class CallsService {
       transcript: payload.transcript ?? null,
       slots: payload.slots ?? null,
       finalStepId: payload.finalStepId ?? null,
+      traceId: payload.traceId ?? null,
       durationSeconds: payload.durationSeconds ?? null,
       startedAt: payload.startedAt ? new Date(payload.startedAt) : null,
       endedAt: payload.endedAt ? new Date(payload.endedAt) : new Date(),
@@ -77,8 +83,15 @@ export class CallsService {
 
     // Phase 4.2: Dual-write call_turns from transcript
     if (payload.transcript?.length) {
+      // Glassbox: the worker sends one decision trace per caller turn. The
+      // transcript interleaves caller and agent entries, so walk a separate
+      // index over caller turns to line each trace up with the utterance that
+      // produced it — see services/voice/obs/turn_trace.py.
+      const traces = payload.turnTraces ?? []
+      let callerSeen = 0
       const turns = payload.transcript.map((entry, idx) => {
         const role = entry['role'] === 'user' ? 'caller' : 'agent'
+        const trace = role === 'caller' ? (traces[callerSeen++] ?? null) : null
         return {
           callSessionId: session.id,
           seq: idx,
@@ -86,7 +99,7 @@ export class CallsService {
           stepId: (entry['step_id'] as string) ?? null,
           intent: (entry['intent'] as string) ?? null,
           text: (entry['text'] as string) ?? '',
-          metadata: null,
+          metadata: trace,
         }
       })
       // Upsert turns (may be called multiple times for same session)
@@ -94,7 +107,9 @@ export class CallsService {
         .createQueryBuilder()
         .insert()
         .into(CallTurn)
-        .values(turns)
+        // TypeORM's deep-partial mapping can't express a jsonb column typed
+        // as an index signature, so the trace object has to be cast here.
+        .values(turns as QueryDeepPartialEntity<CallTurn>[])
         .orIgnore()
         .execute()
     }

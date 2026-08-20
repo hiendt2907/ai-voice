@@ -47,6 +47,14 @@ export class CallSession {
   @Column({ type: 'varchar', nullable: true })
   finalStepId: string | null
 
+  /**
+   * W3C trace id (32 hex chars) shared by every hop of this call — softphone,
+   * voice worker, this API. Minted by the SIP bridge when the call is
+   * answered; use it to open the call's trace in Grafana/Tempo.
+   */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  traceId: string | null
+
   @Column({ type: 'int', nullable: true })
   durationSeconds: number | null
 

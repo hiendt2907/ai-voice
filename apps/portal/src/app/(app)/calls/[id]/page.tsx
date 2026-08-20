@@ -13,11 +13,14 @@ interface CallSession {
   transcript: Array<{ role?: string; text?: string; stepId?: string; ts?: string }> | null
   slots: Record<string, string> | null
   finalStepId: string | null
+  traceId: string | null
   durationSeconds: number | null
   startedAt: string | null
   endedAt: string | null
   createdAt: string
 }
+
+import { TurnTrace, type TurnTraceData } from './TurnTrace'
 
 interface CallTurn {
   id: string
@@ -27,6 +30,8 @@ interface CallTurn {
   intent: string | null
   text: string
   latencyMs: number | null
+  /** Glassbox decision record, present on caller turns — see TurnTrace.tsx. */
+  metadata: TurnTraceData | null
   createdAt: string
 }
 
@@ -139,6 +144,33 @@ export default async function CallDetailPage({ params }: { params: Promise<{ id:
       )}
 
       {/* Recording */}
+      {session?.traceId && (
+        <section className="rounded-xl border border-[var(--color-border)] bg-white p-6 mb-6">
+          <h2 className="text-sm font-semibold text-[var(--color-text)] mb-2">Trace</h2>
+          <p className="text-xs text-[var(--color-text-muted)] mb-2">
+            Một trace id duy nhất xuyên suốt cuộc gọi: softphone → voice worker → API.
+          </p>
+          <div className="flex items-center gap-3">
+            <code className="rounded bg-[var(--color-surface-overlay)] px-2 py-1 text-xs">
+              {session.traceId}
+            </code>
+            <a
+              href={`${process.env.NEXT_PUBLIC_GRAFANA_URL ?? ''}/explore?left=${encodeURIComponent(
+                JSON.stringify({
+                  datasource: 'tempo',
+                  queries: [{ query: session.traceId, queryType: 'traceql' }],
+                }),
+              )}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-[var(--color-accent)] hover:underline"
+            >
+              Mở trong Grafana/Tempo →
+            </a>
+          </div>
+        </section>
+      )}
+
       <section className="rounded-xl border border-[var(--color-border)] bg-white p-6 mb-6">
         <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">Ghi âm</h2>
         {recording ? (
@@ -180,6 +212,16 @@ export default async function CallDetailPage({ params }: { params: Promise<{ id:
                         {turn.intent && <span>intent: {turn.intent}</span>}
                         {turn.latencyMs && <span>{turn.latencyMs}ms</span>}
                       </div>
+                    )}
+                    {turn.metadata && (
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-[11px] text-[var(--color-accent)]">
+                          Vì sao AI trả lời như vậy?
+                        </summary>
+                        <div className="mt-2">
+                          <TurnTrace data={turn.metadata} />
+                        </div>
+                      </details>
                     )}
                   </div>
                 </div>
