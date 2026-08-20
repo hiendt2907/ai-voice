@@ -53,6 +53,17 @@ def _build_tts(tts_cfg: TtsConfig, redis: object | None = None):  # type: ignore
         voice = tts_cfg.voice or "vi-VN-HoaiMyNeural"
         logger.info("TTS engine: edge-tts (voice=%s)", voice)
         return EdgeTTS(voice=voice)
+    if tts_cfg.engine == "xkiro" and tts_cfg.xkiro_api_key:
+        from tts.xkiro_tts import XkiroTTS  # noqa: PLC0415
+        logger.info(
+            "TTS engine: xKiro (voice=%s model=%s)", tts_cfg.xkiro_voice, tts_cfg.xkiro_model
+        )
+        return XkiroTTS(
+            api_key=tts_cfg.xkiro_api_key,
+            voice=tts_cfg.xkiro_voice,
+            tts_url=tts_cfg.xkiro_tts_url,
+            model=tts_cfg.xkiro_model,
+        )
     if tts_cfg.engine == "remote":
         from tts.remote_tts import RemoteTTS  # noqa: PLC0415
         logger.info("TTS engine: remote inference server (%s)", settings.inference_server_url)
@@ -60,7 +71,10 @@ def _build_tts(tts_cfg: TtsConfig, redis: object | None = None):  # type: ignore
             base_url=settings.inference_server_url,
             token=settings.inference_server_token,
         )
-    if tts_cfg.engine == "piper":
+    # "local" is TTSChain's name for the same Piper engine (see tts/chain.py's
+    # engine_map) — accept both so a DB `engine` value that works for the
+    # TTSChain path doesn't silently fall through to beat-only mode here.
+    if tts_cfg.engine in ("piper", "local"):
         from tts.piper_tts import PiperTTS  # noqa: PLC0415
         logger.info("TTS engine: piper (local ONNX)")
         return PiperTTS()
@@ -182,18 +196,20 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     # Warm up Piper TTS singleton (eliminates 300ms first-call JIT penalty)
     try:
         # Probe: piper-tts is an optional extra (local-inference), absent in prod image.
+        import asyncio as _asyncio  # noqa: PLC0415
+
         from piper import PiperVoice as _PiperVoice  # noqa: F401,PLC0415
 
         from tts.piper_tts import PiperTTS as _PiperTTS  # noqa: PLC0415
-        import asyncio as _asyncio  # noqa: PLC0415
         _asyncio.create_task(_PiperTTS().warmup())
     except Exception as _piper_exc:
         logger.debug("Piper warmup skipped: %s", _piper_exc)
 
     # Warm up LLM NLU model (eliminates cold-start latency on first call)
     try:
-        from nlu.llm_resolver import warmup as _llm_warmup  # noqa: PLC0415
         import asyncio as _asyncio2  # noqa: PLC0415
+
+        from nlu.llm_resolver import warmup as _llm_warmup  # noqa: PLC0415
         _asyncio2.create_task(_llm_warmup())
     except Exception as _llm_exc:
         logger.debug("LLM NLU warmup skipped: %s", _llm_exc)
@@ -215,11 +231,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from .routers import calls, callbacks, health, preview, ws  # noqa: E402
-from .routers.rag import router as rag_router  # noqa: E402
-from .routers.nlu import router as nlu_router  # noqa: E402
 from fastapi import Request  # noqa: E402
 from fastapi.routing import APIRouter  # noqa: E402
+
+from .routers import callbacks, calls, health, preview, ws  # noqa: E402
+from .routers.nlu import router as nlu_router  # noqa: E402
+from .routers.rag import router as rag_router  # noqa: E402
 
 config_router = APIRouter(prefix="/config", tags=["config"])
 

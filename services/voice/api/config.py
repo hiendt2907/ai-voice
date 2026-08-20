@@ -88,4 +88,10 @@ class Settings(BaseSettings):
     api_url: str = "http://localhost:3001/api/v1"   # NestJS API base URL (includes /api/v1 prefix)
     internal_api_key: str = ""                       # x-internal-key header for service-to-service calls
     rag_confidence_default: float = 0.65             # calibrated for MiniLM-L12 dim=384 (max usable ~0.76)
+    # Lower floor used only to decide whether an article is relevant enough to
+    # hand to the LLM reasoning tier as grounding context (call/dialogue.py) —
+    # below rag_confidence_default (not a confirmed direct answer) but above
+    # this floor (not pure noise). Below this: no context, skip straight to
+    # escalation instead of letting the LLM reason ungrounded.
+    rag_context_floor: float = 0.45
     semantic_cache_ttl_s: int = 86400               # text cache TTL (seconds), default 24h

@@ -20,6 +20,7 @@ class AiConfig:
     nlu_timeout_ms: int
     response_timeout_ms: int
     fallback_to_substring: bool
+    api_key: str = ""  # Bearer token for cloud OpenAI-compatible providers (e.g. xKiro); Ollama ignores it
 
 
 @dataclass(frozen=True)
@@ -112,13 +113,20 @@ def _parse(raw: dict) -> SystemConfig:  # type: ignore[type-arg]
     vw_raw = raw.get("voiceWorker", {})
     conv_raw = raw.get("conversation", {})
 
+    # Where a DB row exists but leaves a field unset, fall back to this pod's
+    # env config (configmap/secret) rather than to a hardcoded localhost — an
+    # empty `ai` row used to silently point every deployed pod at
+    # localhost:11434, so LLM NLU 404'd on every call.
+    _settings = Settings()
+
     return SystemConfig(
         ai=AiConfig(
-            ollama_base_url=ai_raw.get("ollamaBaseUrl", "http://localhost:11434/v1"),
-            ollama_model=ai_raw.get("ollamaModel", "qwen2.5:latest"),
+            ollama_base_url=ai_raw.get("ollamaBaseUrl") or _settings.llm_base_url,
+            ollama_model=ai_raw.get("ollamaModel") or _settings.llm_model,
             nlu_timeout_ms=int(ai_raw.get("nluTimeoutMs", 800)),
             response_timeout_ms=int(ai_raw.get("responseTimeoutMs", 2000)),
             fallback_to_substring=bool(ai_raw.get("fallbackToSubstring", True)),
+            api_key=ai_raw.get("apiKey") or _settings.xkiro_api_key or _settings.llm_api_key,
         ),
         stt=SttConfig(
             engine=stt_raw.get("engine", "faster_whisper"),
@@ -141,10 +149,14 @@ def _parse(raw: dict) -> SystemConfig:  # type: ignore[type-arg]
             elevenlabs_style=float(tts_raw.get("elevenlabsStyleExaggeration") or 0.0),
             elevenlabs_use_speaker_boost=bool(tts_raw.get("elevenlabsUseSpeakerBoost", True)),
             elevenlabs_speed=float(tts_raw.get("elevenlabsSpeed") or 1.0),
-            xkiro_api_key=tts_raw.get("xkiroApiKey") or "",
-            xkiro_tts_url=tts_raw.get("xkiroTtsUrl") or "https://api.xkiro.com/v1/audio/speech",
-            xkiro_voice=tts_raw.get("xkiroVoice") or "gentle-female-vietnamese",
-            xkiro_model=tts_raw.get("xkiroModel") or "xkiro-voice",
+            # The tts_settings table has no xKiro columns yet, so these come
+            # from the pod's env (k8s secret `ai-voice-xkiro` / .env) unless a
+            # future migration adds them — without the fallback, selecting
+            # engine="xkiro" would build an engine with an empty API key.
+            xkiro_api_key=tts_raw.get("xkiroApiKey") or _settings.xkiro_api_key,
+            xkiro_tts_url=tts_raw.get("xkiroTtsUrl") or _settings.xkiro_tts_url,
+            xkiro_voice=tts_raw.get("xkiroVoice") or _settings.xkiro_voice,
+            xkiro_model=tts_raw.get("xkiroModel") or _settings.xkiro_model,
             fallback_order=tts_raw.get("engineFallbackOrder") or ["edge-tts", "elevenlabs"],
             daily_char_quota=int(tts_raw.get("elevenlabsDailyCharQuota") or 0),
             circuit_breaker_failures=int(tts_raw.get("circuitBreakerFailures") or 3),
@@ -185,6 +197,7 @@ def _fallback(settings: Settings) -> SystemConfig:
             nlu_timeout_ms=800,
             response_timeout_ms=2000,
             fallback_to_substring=True,
+            api_key=settings.xkiro_api_key,
         ),
         stt=SttConfig(
             engine=settings.stt_engine,

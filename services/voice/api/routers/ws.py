@@ -206,6 +206,7 @@ async def call_ws(
             system_prompt=remote_cfg.conversation.system_prompt,
             temperature=remote_cfg.conversation.temperature,
             max_history_turns=remote_cfg.conversation.max_history_turns,
+            api_key=remote_cfg.ai.api_key,
         )
         logger.info(
             "ConversationEngine enabled (model=%s, sentiment=%s)",
@@ -224,6 +225,7 @@ async def call_ws(
         max_history_turns=remote_cfg.conversation.max_history_turns,
         sentence_split_min_chars=remote_cfg.conversation.sentence_split_min_chars,
         rag_confidence_default=_settings.rag_confidence_default,
+        rag_context_floor=_settings.rag_context_floor,
         on_tts_start=media.on_tts_start, on_tts_end=media.on_tts_end,
     )
     turn_orch = TurnOrchestrator(

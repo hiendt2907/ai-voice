@@ -13,6 +13,7 @@ import rag.store as rag_store_module
 from call.dialogue import DialogueEngine
 from call.egress import EgressSender
 from call.events import CallContext
+from llm.conversation import REFUSAL_SENTINEL
 from runtime.session import SessionState, TranscriptEntry
 from tts.fillers import FillerSelector
 
@@ -199,7 +200,7 @@ async def test_handle_turn_speaks_rag_answer_when_no_conv_engine(monkeypatch):
 async def test_handle_turn_escalates_on_no_match(monkeypatch):
     ctx = CallContext(interception_mode="full", campaign_id="c1")
     egress = _FakeEgress()
-    dialogue = _make_dialogue(egress, ctx)
+    dialogue = _make_dialogue(egress, ctx)  # conv_engine=None — reasoning tier off
     monkeypatch.setattr(rag_store_module, "cache_lookup", AsyncMock(return_value=None))
     monkeypatch.setattr(rag_store_module, "fallback_text", lambda gender: "fallback msg")
 
@@ -211,6 +212,144 @@ async def test_handle_turn_escalates_on_no_match(monkeypatch):
     assert egress.said == [("fallback msg", 1, "step1")]
     assert ctx.last_rag_score == 0.0
     escalate.assert_awaited_once_with("câu hỏi lạ")
+
+
+# ── handle_turn — Tầng 3 reasoning tier (RAG miss, conv_engine present) ─────
+
+
+class _FakeConvEngine:
+    def __init__(self, tokens: list[str]) -> None:
+        self._tokens = tokens
+        self.calls: list[dict] = []
+
+    def stream_response(self, utterance, kb_context, history, emotion):  # noqa: ANN001
+        self.calls.append({"utterance": utterance, "kb_context": kb_context})
+
+        async def _gen():
+            for t in self._tokens:
+                yield t
+
+        return _gen()
+
+
+def _make_reasoning_dialogue(egress: _FakeEgress, ctx: CallContext, conv_engine) -> DialogueEngine:
+    return DialogueEngine(
+        egress,  # type: ignore[arg-type]
+        ctx,
+        conv_engine=conv_engine,
+        tts_chain=None,
+        tts=None,
+        filler_selector=FillerSelector(),
+        kb_grounding_enabled=True,
+        max_history_turns=5,
+        sentence_split_min_chars=20,
+        rag_confidence_default=0.6,
+        rag_context_floor=0.45,
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_turn_reasons_when_rag_misses_but_loose_context_found(monkeypatch):
+    ctx = CallContext(interception_mode="full", campaign_id="c1")
+    egress = _FakeEgress()
+    conv_engine = _FakeConvEngine(["Dạ phòng khám ", "mở cửa cả thứ Bảy ạ."])
+    dialogue = _make_reasoning_dialogue(egress, ctx, conv_engine)
+
+    monkeypatch.setattr(rag_store_module, "cache_lookup", AsyncMock(return_value=None))
+    loose_hit = _FakeRagResult(answer="Giờ làm việc: T2-T7", score=0.5, article=_FakeArticle())
+
+    async def _search(*args, max_threshold, **kwargs):  # noqa: ANN001
+        # Strict lookup (rag_confidence_default=0.6) misses; only the loose
+        # floor (rag_context_floor=0.45) call should surface this article.
+        return loose_hit if max_threshold <= 0.45 else None
+
+    monkeypatch.setattr(rag_store_module, "search", _search)
+    import rag.embedder as embedder_module
+    monkeypatch.setattr(embedder_module, "embed_query", lambda text: [0.1, 0.2])
+
+    escalate = AsyncMock()
+    state = SessionState(session_id="s1", script_id="scr", current_step_id="step1")
+    import asyncio
+    await dialogue.handle_turn("thứ bảy có làm việc không", 1, 0.0, state, asyncio.Event(), escalate)
+
+    assert conv_engine.calls == [
+        {"utterance": "thứ bảy có làm việc không", "kb_context": "Giờ làm việc: T2-T7"}
+    ]
+    escalate.assert_not_awaited()
+    assert egress.said == []  # tts_chain=None -> beat-only path, not egress.say
+
+
+@pytest.mark.asyncio
+async def test_handle_turn_reasoning_refusal_escalates(monkeypatch):
+    ctx = CallContext(interception_mode="full", campaign_id="c1")
+    egress = _FakeEgress()
+    conv_engine = _FakeConvEngine([REFUSAL_SENTINEL])
+    dialogue = _make_reasoning_dialogue(egress, ctx, conv_engine)
+
+    monkeypatch.setattr(rag_store_module, "cache_lookup", AsyncMock(return_value=None))
+    loose_hit = _FakeRagResult(answer="context không đủ liên quan", score=0.46, article=_FakeArticle())
+
+    async def _search(*args, max_threshold, **kwargs):  # noqa: ANN001
+        return loose_hit if max_threshold <= 0.45 else None
+
+    monkeypatch.setattr(rag_store_module, "search", _search)
+    import rag.embedder as embedder_module
+    monkeypatch.setattr(embedder_module, "embed_query", lambda text: [0.1, 0.2])
+    monkeypatch.setattr(rag_store_module, "fallback_text", lambda gender: "fallback msg")
+
+    escalate = AsyncMock()
+    state = SessionState(session_id="s1", script_id="scr", current_step_id="step1")
+    import asyncio
+    await dialogue.handle_turn("câu hỏi khó", 1, 0.0, state, asyncio.Event(), escalate)
+
+    escalate.assert_awaited_once_with("câu hỏi khó")
+    # the refusal line was already "spoken" (accumulated) -> no double fallback message
+    assert egress.said == []
+
+
+@pytest.mark.asyncio
+async def test_handle_turn_blacklisted_utterance_skips_llm(monkeypatch):
+    ctx = CallContext(interception_mode="full", campaign_id="c1")
+    egress = _FakeEgress()
+    conv_engine = _FakeConvEngine(["should never be called"])
+    dialogue = _make_reasoning_dialogue(egress, ctx, conv_engine)
+
+    monkeypatch.setattr(rag_store_module, "cache_lookup", AsyncMock(return_value=None))
+    monkeypatch.setattr(rag_store_module, "fallback_text", lambda gender: "fallback msg")
+    search = AsyncMock(side_effect=AssertionError("must not reach RAG search for blacklisted input"))
+    monkeypatch.setattr(rag_store_module, "search", search)
+
+    escalate = AsyncMock()
+    state = SessionState(session_id="s1", script_id="scr", current_step_id="step1")
+    import asyncio
+    await dialogue.handle_turn("bác sĩ chẩn đoán giúp em", 1, 0.0, state, asyncio.Event(), escalate)
+
+    assert conv_engine.calls == []
+    assert egress.said == [("fallback msg", 1, "step1")]
+    escalate.assert_awaited_once_with("bác sĩ chẩn đoán giúp em")
+
+
+@pytest.mark.asyncio
+async def test_handle_turn_no_loose_context_falls_back(monkeypatch):
+    ctx = CallContext(interception_mode="full", campaign_id="c1")
+    egress = _FakeEgress()
+    conv_engine = _FakeConvEngine(["should never be called"])
+    dialogue = _make_reasoning_dialogue(egress, ctx, conv_engine)
+
+    monkeypatch.setattr(rag_store_module, "cache_lookup", AsyncMock(return_value=None))
+    monkeypatch.setattr(rag_store_module, "search", AsyncMock(return_value=None))
+    monkeypatch.setattr(rag_store_module, "fallback_text", lambda gender: "fallback msg")
+    import rag.embedder as embedder_module
+    monkeypatch.setattr(embedder_module, "embed_query", lambda text: [0.1, 0.2])
+
+    escalate = AsyncMock()
+    state = SessionState(session_id="s1", script_id="scr", current_step_id="step1")
+    import asyncio
+    await dialogue.handle_turn("câu hỏi hoàn toàn ngoài phạm vi", 1, 0.0, state, asyncio.Event(), escalate)
+
+    assert conv_engine.calls == []
+    assert egress.said == [("fallback msg", 1, "step1")]
+    escalate.assert_awaited_once_with("câu hỏi hoàn toàn ngoài phạm vi")
 
 
 # ── _tts_stream cancellation (barge-in must close the LLM stream, not just

@@ -19,9 +19,42 @@ from runtime.session import SessionState
 
 logger = logging.getLogger(__name__)
 
-_OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+# LLM_BASE_URL is what deploy/k8s's configmap actually sets (and what
+# api/config.py's Settings.llm_base_url reads); OLLAMA_BASE_URL is kept first
+# for backwards compatibility with existing local .env files. Reading only
+# OLLAMA_BASE_URL meant every deployed pod silently fell back to localhost and
+# every LLM NLU call 404'd.
+_OLLAMA_BASE_URL = (
+    os.getenv("OLLAMA_BASE_URL")
+    or os.getenv("LLM_BASE_URL", "http://localhost:11434/v1").removesuffix("/v1")
+)
 _OLLAMA_MODEL = os.getenv("LLM_NLU_MODEL", os.getenv("LLM_MODEL", "qwen2.5:1.5b"))
 _TIMEOUT_S = float(os.getenv("LLM_NLU_TIMEOUT_S", "5"))
+_LLM_API_KEY = os.getenv("XKIRO_API_KEY", "") or os.getenv("LLM_API_KEY", "")
+
+
+async def _chat_json(messages: list[dict], *, max_tokens: int, temperature: float, timeout_s: float) -> str:
+    """One JSON-mode completion over the OpenAI-compatible `/v1/chat/completions`
+    endpoint. Ollama serves this alongside its native `/api/chat`, and cloud
+    providers (xKiro) serve *only* this — so using it keeps both reachable
+    from the same code path.
+    """
+    headers = {"Authorization": f"Bearer {_LLM_API_KEY}"} if _LLM_API_KEY else {}
+    async with httpx.AsyncClient(timeout=timeout_s, headers=headers) as client:
+        response = await client.post(
+            f"{_OLLAMA_BASE_URL}/v1/chat/completions",
+            json={
+                "model": _OLLAMA_MODEL,
+                "messages": messages,
+                "stream": False,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "response_format": {"type": "json_object"},
+            },
+        )
+        response.raise_for_status()
+    data = response.json()
+    return str(data["choices"][0]["message"]["content"])
 
 _SYSTEM_TEMPLATE_CONSTRAINED = """\
 Classify the LAST user message. Return JSON only.
@@ -134,21 +167,9 @@ async def resolve_with_llm(
 
     messages = _build_messages(utterance, state, script_body, expected_intents)
 
-    async with httpx.AsyncClient(timeout=_TIMEOUT_S) as client:
-        response = await client.post(
-            f"{_OLLAMA_BASE_URL}/api/chat",
-            json={
-                "model": _OLLAMA_MODEL,
-                "messages": messages,
-                "format": "json",
-                "stream": False,
-                "options": {"temperature": 0.1, "num_predict": 150},
-            },
-        )
-        response.raise_for_status()
-
-    data = response.json()
-    raw_content = data.get("message", {}).get("content", "{}")
+    raw_content = await _chat_json(
+        messages, max_tokens=150, temperature=0.1, timeout_s=_TIMEOUT_S
+    )
 
     try:
         parsed = json.loads(raw_content)
@@ -200,17 +221,10 @@ async def resolve_with_llm(
 async def warmup() -> None:
     """Pre-load the LLM model into memory to avoid cold-start latency on first call."""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            await client.post(
-                f"{_OLLAMA_BASE_URL}/api/chat",
-                json={
-                    "model": _OLLAMA_MODEL,
-                    "messages": [{"role": "user", "content": "ok"}],
-                    "format": "json",
-                    "stream": False,
-                    "options": {"temperature": 0.0, "num_predict": 5},
-                },
-            )
+        await _chat_json(
+            [{"role": "user", "content": "ok"}],
+            max_tokens=5, temperature=0.0, timeout_s=30.0,
+        )
         logger.info("LLM NLU warmup done (model=%s)", _OLLAMA_MODEL)
     except Exception as exc:
         logger.debug("LLM NLU warmup skipped: %s", exc)

@@ -17,17 +17,20 @@ data:
   VOICE_WORKER_BASE_URL: "http://voice:8000"
   VOICE_WORKER_URL: "http://voice:8000"
 
-  # LLM — always routed to the operator's Macbook Ollama over Tailscale,
-  # never a cloud LLM or a model on the cluster itself.
-  LLM_PROVIDER: "ollama"
-  LLM_BASE_URL: "http://100.93.3.96:11434/v1"
-  LLM_MODEL: "qwen3:8b"
+  # LLM — xKiro cloud (OpenAI-compatible). Moved off the Macbook Ollama so the
+  # Mac only has to run SIP + STT; the API key comes from the `ai-voice-xkiro`
+  # secret, not from here.
+  LLM_PROVIDER: "ollama"   # "ollama" == generic OpenAI-compatible client path
+  LLM_BASE_URL: "https://api.xkiro.com/v1"
+  LLM_MODEL: "qwen/qwen3.5-flash"
   USE_LLM_NLU: "true"
 
-  # STT/TTS — routed to the Macbook inference server (Piper + faster-whisper)
-  # over Tailscale, same principle as LLM. No model weights on GCP.
+  # STT stays on the Macbook inference server (faster-whisper) over Tailscale —
+  # xKiro has no speech-to-text endpoint (/v1/audio/transcriptions returns 404
+  # and no audio model is listed), so this is the one piece that can't move.
+  # TTS is xKiro cloud; no TTS model weights on GCP or the Mac any more.
   STT_ENGINE: "remote"
-  TTS_ENGINE: "remote"
+  TTS_ENGINE: "xkiro"
   USE_REAL_TTS: "true"
   # Canary (2026-08-20): streaming STT validated round 1-4, see memory
   # phase2-streaming-stt-not-ready — latency ≥ one-shot, crash not
@@ -45,6 +48,12 @@ data:
   USE_SILERO_VAD: "true"
   ELEVENLABS_VOICE_ID: "d5HVupAWCwe4e6GvMCAL"
   ELEVENLABS_MODEL_ID: "eleven_v3"
+
+  # xKiro — TTS voice/model and the LLM endpoint share one account; only
+  # XKIRO_API_KEY is secret (k8s secret `ai-voice-xkiro`).
+  XKIRO_TTS_URL: "https://api.xkiro.com/v1/audio/speech"
+  XKIRO_VOICE: "gentle-female-vietnamese"
+  XKIRO_MODEL: "xkiro-voice"
 
   # CloudFone ODS — still pending real schema, mock mode
   USE_REAL_ODS: "false"

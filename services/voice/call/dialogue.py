@@ -22,8 +22,9 @@ from typing import TYPE_CHECKING, Any
 
 from call.egress import EgressSender
 from call.events import BeatPayload, CallContext
-from llm.conversation import ConversationEngine
+from llm.conversation import REFUSAL_SENTINEL, ConversationEngine
 from llm.sentence_splitter import SentenceSplitter
+from runtime.guardrails import is_blacklisted
 from tts.chain import TTSChain
 from tts.fillers import FillerSelector
 from tts.params import EmotionState
@@ -48,6 +49,7 @@ class DialogueEngine:
         max_history_turns: int,
         sentence_split_min_chars: int,
         rag_confidence_default: float,
+        rag_context_floor: float = 0.45,
         on_tts_start: Callable[[], None] = lambda: None,
         on_tts_end: Callable[[], None] = lambda: None,
     ) -> None:
@@ -61,6 +63,7 @@ class DialogueEngine:
         self.max_history_turns = max_history_turns
         self.sentence_split_min_chars = sentence_split_min_chars
         self.rag_confidence_default = rag_confidence_default
+        self.rag_context_floor = rag_context_floor
         self.on_tts_start = on_tts_start
         self.on_tts_end = on_tts_end
 
@@ -92,7 +95,7 @@ class DialogueEngine:
             logger.warning("RAG search error: %s", exc)
             return None
 
-    def get_history(self, state: "SessionState | None") -> list[tuple[str, str]]:
+    def get_history(self, state: SessionState | None) -> list[tuple[str, str]]:
         """Extract last N (user, agent) turn pairs from transcript."""
         if state is None:
             return []
@@ -114,7 +117,7 @@ class DialogueEngine:
         utterance: str,
         turn: int,
         t_start: float,
-        state: "SessionState | None",
+        state: SessionState | None,
         tts_interrupt: asyncio.Event,
         escalate: Any,
     ) -> None:
@@ -174,14 +177,110 @@ class DialogueEngine:
             if self.ctx.interception_mode == "shadow":
                 logger.info("[SHADOW] fallback (no RAG match)")
                 return
-            fallback_gender = gender if gender in ("male", "female") else "unknown"
-            fallback_msg = self.ctx.script.get("ragFallbackMessage", rag_store.fallback_text(fallback_gender))
-            await self.egress.say(
-                fallback_msg, turn, t_start,
-                state.current_step_id if state else "", self.tts_chain, self.tts,
+
+            reasoned = False
+            if self.conv_engine is not None and not is_blacklisted(utterance):
+                context = await self._loose_rag_context(utterance, gender)
+                if context is not None:
+                    reasoned = await self._reason_and_speak(
+                        utterance, context, turn, t_start, current_emotion,
+                        tts_interrupt, state, escalate,
+                    )
+
+            if not reasoned:
+                fallback_gender = gender if gender in ("male", "female") else "unknown"
+                fallback_msg = self.ctx.script.get(
+                    "ragFallbackMessage", rag_store.fallback_text(fallback_gender)
+                )
+                await self.egress.say(
+                    fallback_msg, turn, t_start,
+                    state.current_step_id if state else "", self.tts_chain, self.tts,
+                )
+                if state:
+                    await escalate(utterance)
+
+    # ── Tầng 3: LLM reasoning when RAG has no confirmed answer ─────────────
+    #
+    # Three-layer gate, only the third one touches an LLM:
+    #   1. is_blacklisted() — deterministic regex, evaluated above, before
+    #      this is even called. Diagnosis/prescription/pricing questions
+    #      never reach the model, so a prompt-injected "ignore your rules"
+    #      can't bypass it the way a system-prompt-only rule could.
+    #   2. _loose_rag_context() — rag_context_floor gate below. No KB
+    #      article is even loosely relevant → nothing to ground the model
+    #      on, so don't call it (ungrounded generation is exactly what we're
+    #      trying to avoid).
+    #   3. The model itself, forced by ConversationEngine's system prompt to
+    #      answer only from the given context or emit REFUSAL_SENTINEL
+    #      verbatim — detected here by prefix match on the streamed output.
+
+    async def _loose_rag_context(self, utterance: str, gender: str) -> str | None:
+        """Same search primitive as rag_lookup(), but at rag_context_floor
+        instead of rag_confidence_default — loose enough to hand the LLM
+        something to ground on, without being confident enough to speak
+        directly as a KB answer. query_text is deliberately omitted so this
+        never populates the semantic cache that rag_lookup()'s cache_lookup()
+        reads from — a floor-level match must never be replayed later as a
+        confirmed direct answer."""
+        from rag import store as rag_store  # noqa: PLC0415
+        from rag.embedder import embed_query  # noqa: PLC0415
+
+        linked_tags: list[str] = self.ctx.script.get("linkedKbTags", [])
+        try:
+            loop = asyncio.get_running_loop()
+            query_emb = await loop.run_in_executor(None, embed_query, utterance)
+            result = await rag_store.search(
+                query_emb,
+                gender=gender,  # type: ignore[arg-type]
+                linked_kb_tags=linked_tags or None,
+                max_threshold=self.rag_context_floor,
+                campaign_id=self.ctx.campaign_id,
             )
+            return result.answer if result is not None else None
+        except Exception as exc:
+            logger.warning("Loose RAG context lookup error: %s", exc)
+            return None
+
+    async def _reason_and_speak(
+        self,
+        utterance: str,
+        kb_context: str,
+        turn: int,
+        t_start: float,
+        emotion: EmotionState,
+        tts_interrupt: asyncio.Event,
+        state: SessionState | None,
+        escalate: Any,
+    ) -> bool:
+        """Stream a grounded LLM answer. Returns True if something was
+        actually spoken (a real answer, or the model's own refusal line) —
+        the caller must not also speak the static fallback in that case."""
+        accumulated: list[str] = []
+
+        async def _tap(gen: AsyncGenerator[str, None]) -> AsyncGenerator[str, None]:
+            async for token in gen:
+                accumulated.append(token)
+                yield token
+
+        gen = self.conv_engine.stream_response(  # type: ignore[union-attr]
+            utterance=utterance,
+            kb_context=kb_context,
+            history=self.get_history(state),
+            emotion=emotion,
+        )
+        await self._tts_stream(_tap(gen), turn, t_start, emotion, tts_interrupt, state)
+
+        full_text = "".join(accumulated).strip()
+        if not full_text:
+            return False  # LLM call failed/empty — let caller speak the static fallback
+
+        if full_text.startswith(REFUSAL_SENTINEL):
+            logger.info("Reasoning tier: model declined (insufficient grounding)")
             if state:
                 await escalate(utterance)
+        else:
+            logger.info("Reasoning tier answered: %.80s", full_text)
+        return True
 
     # ── LLM token stream -> sentence splitter -> TTS ──────────────────────
 
@@ -192,7 +291,7 @@ class DialogueEngine:
         t_start: float,
         emotion: EmotionState,
         interrupt: asyncio.Event,
-        state: "SessionState | None",
+        state: SessionState | None,
     ) -> None:
         if self.tts_chain is None:
             # Beat-only fallback: buffer full response and send as one beat
