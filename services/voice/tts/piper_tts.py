@@ -71,13 +71,45 @@ class PiperTTS:
         return await loop.run_in_executor(None, self._synthesize_sync, text)
 
     async def stream_synthesize(self, text: str, chunk_ms: int = 20):
-        pcm = await self.synthesize(text)
-        bytes_per_chunk = int(_TARGET_SR * chunk_ms / 1000) * 2
+        """True streaming: yields one chunk per SENTENCE as Piper's own
+        `synthesize()` generator produces it, instead of the previous
+        pseudo-stream (synthesize the whole utterance via `synthesize_wav`,
+        then slice the finished buffer into fixed-size pieces — TTFA was
+        ~96% of total synthesis time, see
+        docs/ai-streaming-voice-architecture-proposal.md §1182/§197).
+        Multi-sentence beats now get audio for sentence 1 while sentence 2+
+        are still being synthesized, same as a real streaming engine.
+        """
+        voice, _ = _load_voice(self._model_path)
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[bytes | BaseException | None] = asyncio.Queue()
+
+        def _produce() -> None:
+            try:
+                for chunk in voice.synthesize(text):  # type: ignore[union-attr]
+                    samples = (
+                        np.frombuffer(chunk.audio_int16_bytes, dtype=np.int16).astype(np.float32)
+                        / 32768.0
+                    )
+                    pcm = _resample(samples, chunk.sample_rate)
+                    loop.call_soon_threadsafe(queue.put_nowait, pcm)
+            except BaseException as exc:  # noqa: BLE001 — relayed to the consumer below
+                loop.call_soon_threadsafe(queue.put_nowait, exc)
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
 
         async def _gen():
-            for i in range(0, len(pcm), bytes_per_chunk):
-                yield pcm[i: i + bytes_per_chunk]
-                await asyncio.sleep(0)
+            producer = loop.run_in_executor(None, _produce)
+            try:
+                while True:
+                    item = await queue.get()
+                    if item is None:
+                        return
+                    if isinstance(item, BaseException):
+                        raise item
+                    yield item
+            finally:
+                await producer
 
         return _gen()
 

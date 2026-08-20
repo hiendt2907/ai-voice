@@ -20,7 +20,7 @@ import json
 import logging
 import os
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from concurrent.futures import Executor, ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from functools import lru_cache
@@ -38,6 +38,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from stt.faster_whisper_stt import FasterWhisperSTT
@@ -220,6 +221,32 @@ async def tts_synthesize(
             "X-Channels": "1",
             "Content-Length": str(len(pcm)),
         },
+    )
+
+
+@app.post("/tts/synthesize/stream", dependencies=[Depends(verify_service_token)])
+async def tts_synthesize_stream(
+    req: TTSRequest,
+    tts: Annotated[PiperTTS, Depends(get_tts)],
+) -> StreamingResponse:
+    """True streaming counterpart of /tts/synthesize: each HTTP response
+    chunk is one of Piper's own per-sentence audio chunks (see
+    `PiperTTS.stream_synthesize`), sent as soon as that sentence finishes
+    synthesizing — not the whole utterance buffered then sliced. Closes the
+    "RemoteTTS is a pseudo-stream" gap in
+    docs/ai-streaming-voice-architecture-proposal.md §197/§1074/§1182 at the
+    transport layer (the synthesis layer was already fixed to stream
+    per-sentence)."""
+
+    async def _body() -> AsyncGenerator[bytes, None]:
+        gen = await tts.stream_synthesize(req.text)
+        async for chunk in gen:
+            yield chunk
+
+    return StreamingResponse(
+        _body(),
+        media_type="audio/L16",
+        headers={"X-Sample-Rate": str(OUTPUT_SAMPLE_RATE), "X-Channels": "1"},
     )
 
 

@@ -112,17 +112,43 @@ class RemoteTTS:
     async def stream_synthesize(
         self, text: str, params: TTSParams | None = None, chunk_size: int = _CHUNK_SIZE
     ) -> AsyncGenerator[bytes, None]:
-        """Synthesize whole utterance, then yield fixed-size PCM chunks.
-
-        The inference server has no streaming endpoint, so this is a
-        pseudo-stream that keeps the downstream interface identical.
+        """Stream from the inference server's `/tts/synthesize/stream`
+        endpoint — each HTTP response chunk is one of Piper's own
+        per-sentence audio chunks (see `PiperTTS.stream_synthesize`), sent
+        as soon as that sentence is synthesized. Previously this buffered
+        the whole utterance via the one-shot endpoint before yielding
+        anything (TTFA ≈ full synthesis time — see
+        docs/ai-streaming-voice-architecture-proposal.md §197/§1074/§1182).
         """
-        pcm = await self.synthesize(text, params)
+        if not text or not text.strip():
+            async def _empty() -> AsyncGenerator[bytes, None]:
+                return
+                yield b""  # pragma: no cover
+
+            return _empty()
+
+        payload: dict[str, object] = {
+            "text": text,
+            "speaking_rate": params.speaking_rate if params is not None else None,
+            "pitch": None,
+        }
+        url = f"{self._base_url}/tts/synthesize/stream"
+        client = self._get_client()
 
         async def _gen() -> AsyncGenerator[bytes, None]:
-            for i in range(0, len(pcm), chunk_size):
-                yield pcm[i : i + chunk_size]
-                await asyncio.sleep(0)
+            try:
+                async with client.stream(
+                    "POST", url, json=payload, timeout=self._timeout_s, headers=self._auth_headers()
+                ) as resp:
+                    resp.raise_for_status()
+                    async for chunk in resp.aiter_bytes(chunk_size):
+                        yield chunk
+            except httpx.HTTPStatusError as exc:
+                raise RemoteTTSError(
+                    f"Remote TTS {url} returned HTTP {exc.response.status_code}"
+                ) from exc
+            except httpx.HTTPError as exc:
+                raise RemoteTTSError(f"Remote TTS {url} unreachable: {exc}") from exc
 
         return _gen()
 

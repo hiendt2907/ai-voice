@@ -77,6 +77,71 @@ async def test_tts_stream_synthesize_chunks():
     assert [len(c) for c in chunks] == [1000, 1000, 500]
 
 
+async def test_tts_stream_synthesize_hits_streaming_endpoint():
+    """stream_synthesize must call the true-streaming endpoint, not the
+    one-shot /tts/synthesize used by synthesize() — regression guard for
+    the pseudo-stream fix (architecture doc §197/§1074/§1182)."""
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, content=b"chunk")
+
+    tts = RemoteTTS(base_url=BASE, client=_client(handler))
+    gen = await tts.stream_synthesize("xin chào")
+    [c async for c in gen]
+
+    assert seen["url"] == f"{BASE}/tts/synthesize/stream"
+
+
+async def test_tts_stream_synthesize_yields_chunks_as_server_sends_them():
+    """The client must consume the response incrementally (httpx streaming),
+    not buffer the whole body first — otherwise the transport-layer fix is
+    a no-op regardless of what the server does."""
+
+    async def body():
+        yield b"first-sentence-"
+        yield b"second-sentence"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=body())
+
+    tts = RemoteTTS(base_url=BASE, client=_client(handler))
+    gen = await tts.stream_synthesize("xin chào", chunk_size=64)
+    chunks = [c async for c in gen]
+
+    assert b"".join(chunks) == b"first-sentence-second-sentence"
+
+
+async def test_tts_stream_synthesize_http_error_raises_remote_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="boom")
+
+    tts = RemoteTTS(base_url=BASE, client=_client(handler))
+    gen = await tts.stream_synthesize("xin chào")
+    with pytest.raises(RemoteTTSError, match="HTTP 500"):
+        [c async for c in gen]
+
+
+async def test_tts_stream_synthesize_connect_error_raises_remote_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    tts = RemoteTTS(base_url=BASE, client=_client(handler))
+    gen = await tts.stream_synthesize("xin chào")
+    with pytest.raises(RemoteTTSError, match="unreachable"):
+        [c async for c in gen]
+
+
+async def test_tts_stream_synthesize_empty_text_yields_nothing():
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("should not be called")
+
+    tts = RemoteTTS(base_url=BASE, client=_client(handler))
+    gen = await tts.stream_synthesize("   ")
+    assert [c async for c in gen] == []
+
+
 async def test_tts_stream_step_joins_beats_and_fills_slots():
     seen: dict[str, str] = {}
 

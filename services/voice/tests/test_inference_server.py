@@ -29,10 +29,20 @@ AUTH_HEADERS = {"Authorization": f"Bearer {INFERENCE_SERVER_TOKEN}"}
 class FakePiperTTS:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
+        self.stream_calls: list[str] = []
 
     async def synthesize(self, text: str, params: object = None) -> bytes:
         self.calls.append((text, params))
         return FAKE_PCM
+
+    async def stream_synthesize(self, text: str, chunk_ms: int = 20):
+        self.stream_calls.append(text)
+
+        async def _gen():
+            yield FAKE_PCM[:4]
+            yield FAKE_PCM[4:]
+
+        return _gen()
 
 
 class FakeSTT:
@@ -102,6 +112,26 @@ async def test_tts_rejects_empty_text(client: AsyncClient) -> None:
     resp = await client.post("/tts/synthesize", json={"text": ""}, headers=AUTH_HEADERS)
 
     assert resp.status_code == 422
+
+
+async def test_tts_stream_returns_concatenated_chunks(
+    client: AsyncClient, fake_tts: FakePiperTTS
+) -> None:
+    resp = await client.post(
+        "/tts/synthesize/stream", json={"text": "Xin chào"}, headers=AUTH_HEADERS
+    )
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "audio/L16"
+    assert resp.headers["x-sample-rate"] == "8000"
+    assert resp.content == FAKE_PCM
+    assert fake_tts.stream_calls == ["Xin chào"]
+
+
+async def test_tts_stream_rejects_missing_authorization_header(client: AsyncClient) -> None:
+    resp = await client.post("/tts/synthesize/stream", json={"text": "a"})
+
+    assert resp.status_code == 401
 
 
 async def test_stt_transcribes_raw_pcm_body(
