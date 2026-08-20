@@ -309,7 +309,8 @@ async def call_ws(
                         "direction": ctx.caller_direction,
                     },
                 )
-                call_span_cm.__enter__()
+                _call_span = call_span_cm.__enter__()
+                ctx.otel_ctx = obs.context_with_span(_call_span)
                 ctx.trace_id = obs.current_trace_id() or (_tp.split("-")[1] if _tp else "")
                 _stt_engine = getattr(ws.app.state, "stt", None)
                 ctx.stt_engine_name = type(_stt_engine).__name__ if _stt_engine else ""

@@ -73,6 +73,9 @@ class CallContext:
     # call_turns.metadata on hangup — see obs/turn_trace.py.
     trace_id: str = ""
     turn_traces: list[Any] = field(default_factory=list)
+    # OTel Context of the call root span, passed explicitly to spans
+    # started in other tasks (see obs.tracing.context_with_span).
+    otel_ctx: Any = None
     # Engine names are recorded per turn so a trace shows which engine
     # actually served it — TTSChain falls back between engines mid-call.
     stt_engine_name: str = ""

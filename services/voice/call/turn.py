@@ -249,7 +249,7 @@ class TurnOrchestrator:
             )
         )
         step_from = self.state.current_step_id
-        with obs.span("nlu", **{"turn": self.turn}) as nlu_span:
+        with obs.span("nlu", parent=self.ctx.otel_ctx, **{"turn": self.turn}) as nlu_span:
             _t_nlu = time.perf_counter()
             result = await async_process_turn(self.state, self.ctx.script, utterance, self.nlu)
             trace.nlu_ms = round((time.perf_counter() - _t_nlu) * 1000, 1)
@@ -345,7 +345,10 @@ class TurnOrchestrator:
                 self._last_rag = None
             trace.total_ms = round((time.perf_counter() - t_start) * 1000, 1)
             trace.trace_id = self.ctx.trace_id
-            trace.apply_to_span(obs.current_span())
+            # Parented explicitly: this runs in the turn-handler task, where
+            # the call span is not in the implicit context.
+            with obs.span("turn", parent=self.ctx.otel_ctx) as turn_span:
+                trace.apply_to_span(turn_span)
             self.ctx.turn_traces.append(trace.to_dict())
             # Sent AFTER the beats so a live viewer lines the trace up with
             # the audio the caller is hearing.

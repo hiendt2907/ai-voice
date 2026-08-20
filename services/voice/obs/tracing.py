@@ -129,6 +129,25 @@ def set_attr(sp: Any, key: str, value: Any) -> None:
             sp.set_attribute(key, value)
 
 
+def context_with_span(sp: Any) -> Any:
+    """Wrap a span into an OTel Context that can be handed to another
+    asyncio task.
+
+    OTel's implicit context is a contextvar, so a span entered in the
+    WebSocket handler is invisible to the turn-handler task, which was
+    created separately — child spans there would silently start their own
+    trace. Passing this explicitly as `parent=` keeps one trace per call.
+    """
+    if not _enabled or sp is None:
+        return None
+    try:
+        from opentelemetry import trace  # noqa: PLC0415
+
+        return trace.set_span_in_context(sp)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def current_span() -> Any:
     """Active span, or None when tracing is off."""
     if not _enabled:
