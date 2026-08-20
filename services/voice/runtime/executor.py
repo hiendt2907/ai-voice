@@ -19,7 +19,6 @@ from typing import Any
 from runtime.fsm import resolve_next_step
 from runtime.intent_matcher import MatchResult, match_intent
 from runtime.session import SessionState, TranscriptEntry
-from nlu.slot_extractor import extract_slots as nlu_extract_slots
 
 logger = logging.getLogger(__name__)
 
@@ -327,7 +326,7 @@ async def async_process_turn(
     state: SessionState,
     script_body: dict,
     utterance: str | None,
-    nlu: "Any | None" = None,
+    nlu: Any | None = None,
 ) -> TurnResult:
     """Async version with stateful LLM NLU (primary) + vector NLU (fallback)."""
     if not utterance:
@@ -340,34 +339,47 @@ async def async_process_turn(
     _expected_intents = extract_step_intents(_cur_step)
     campaign_id: str | None = script_body.get("campaignId")
 
-    # Primary: stateful LLM resolver — passes full conversation history
+    # Primary: per-turn vector NLU (local embedding similarity, single-digit
+    # ms). The stateful LLM resolver used to run first and unconditionally —
+    # it ignored the `use_llm_nlu` setting entirely — which put a full cloud
+    # LLM round-trip (~2s against xKiro) in front of *every* turn even when
+    # the local matcher would have answered instantly.
     nlu_result = None
     try:
-        from nlu.llm_resolver import resolve_with_llm  # noqa: PLC0415
-        nlu_result = await resolve_with_llm(utterance, state, script_body, _expected_intents)
-    except Exception as llm_exc:
-        logger.info("LLM NLU unavailable [%s] %r, falling back to vector NLU", type(llm_exc).__name__, llm_exc)
+        import asyncio  # noqa: PLC0415
 
-    # Fallback: per-turn vector NLU (embedding similarity search)
-    if nlu_result is None:
+        from nlu.intent_resolver import resolve as nlu_resolve  # noqa: PLC0415
+        from rag.embedder import embed_query  # noqa: PLC0415
+
+        loop = asyncio.get_running_loop()
+        query_emb = await loop.run_in_executor(None, embed_query, utterance)
+        nlu_result = nlu_resolve(
+            utterance, query_emb,
+            campaign_id=campaign_id,
+            expected_intents=_expected_intents or None,
+        )
+        logger.info(
+            "Vector NLU: intent=%s confidence=%.3f tier=%s",
+            nlu_result.intent, nlu_result.confidence, nlu_result.tier,
+        )
+    except Exception as vec_exc:
+        logger.warning("Vector NLU failed: %s", vec_exc)
+
+    # Escalate to the stateful LLM resolver only when the local matcher isn't
+    # confident — it sees the whole conversation history, so it resolves
+    # context-dependent turns vector NLU can't, but it is ~100x slower.
+    from api.config import Settings as _Settings  # noqa: PLC0415
+    if _Settings().use_llm_nlu and (nlu_result is None or nlu_result.tier != "confident"):
         try:
-            import asyncio  # noqa: PLC0415
-            from rag.embedder import embed_query  # noqa: PLC0415
-            from nlu.intent_resolver import resolve as nlu_resolve  # noqa: PLC0415
-
-            loop = asyncio.get_running_loop()
-            query_emb = await loop.run_in_executor(None, embed_query, utterance)
-            nlu_result = nlu_resolve(
-                utterance, query_emb,
-                campaign_id=campaign_id,
-                expected_intents=_expected_intents or None,
+            from nlu.llm_resolver import resolve_with_llm  # noqa: PLC0415
+            llm_result = await resolve_with_llm(utterance, state, script_body, _expected_intents)
+            if llm_result is not None:
+                nlu_result = llm_result
+        except Exception as llm_exc:
+            logger.info(
+                "LLM NLU unavailable [%s] %r, keeping vector NLU result",
+                type(llm_exc).__name__, llm_exc,
             )
-            logger.debug(
-                "Vector NLU: intent=%s confidence=%.3f tier=%s",
-                nlu_result.intent, nlu_result.confidence, nlu_result.tier,
-            )
-        except Exception as vec_exc:
-            logger.warning("Vector NLU also failed: %s", vec_exc)
 
     if nlu_result is not None:
         # Convert to MatchResult for the existing FSM engine
