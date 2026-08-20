@@ -253,9 +253,16 @@ async def call_ws(ws: WebSocket, script_id: str = "", provider: str = "cloudfone
                 # PLAYING it well after that. `egress.is_playing` is the
                 # audio-position clock that covers that tail (see
                 # call/egress.py); either signal makes barge-in eligible.
-                is_barge_in = media.feed(
-                    raw.get("data", ""), tts_active=turn_orch.tts_active or egress.is_playing
-                )
+                _gate = turn_orch.tts_active or egress.is_playing
+                if _gate:
+                    logger.info(
+                        "DEBUG_GATE tts_active=%s is_playing=%s deadline_remaining_ms=%.1f",
+                        turn_orch.tts_active, egress.is_playing,
+                        (egress._playback_deadline - time.monotonic()) * 1000,
+                    )
+                is_barge_in = media.feed(raw.get("data", ""), tts_active=_gate)
+                if is_barge_in:
+                    logger.info("DEBUG_BARGEIN_DETECTED turn=%s", turn_orch.turn)
                 # Only act once per interruption, not once per audio frame
                 # (an interruption spans many frames while the caller keeps
                 # talking) — `tts_interrupt` being unset is exactly "this is
