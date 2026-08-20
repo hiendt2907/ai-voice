@@ -27,8 +27,8 @@ resources:
 # human always approves the actual rollout.
 images:
   - name: harbor.harbor.svc.cluster.local/ai-voice/api
-    newTag: latest
+    newTag: 541bcd3
   - name: harbor.harbor.svc.cluster.local/ai-voice/portal
-    newTag: latest
+    newTag: 541bcd3
   - name: harbor.harbor.svc.cluster.local/ai-voice/voice
-    newTag: latest
+    newTag: 541bcd3
