@@ -10,6 +10,7 @@ stream_synthesize / stream_step) so it drops into TTSChain unchanged.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import logging
 import re
@@ -24,6 +25,12 @@ logger = logging.getLogger(__name__)
 _DEFAULT_URL = "https://api.xkiro.com/v1/audio/speech"
 _DEFAULT_MODEL = "xkiro-voice"
 _DEFAULT_TIMEOUT = 30.0
+
+_TARGET_SR = 8000
+# 20ms @ 8kHz mono int16 — one telephony frame, so the first decoded audio
+# reaches the caller as soon as a single frame exists rather than after a
+# larger read buffer fills.
+_PCM_CHUNK_BYTES = 320
 
 _TEMPLATE_VAR = re.compile(r"\{\{(\w+)\}\}")
 
@@ -110,20 +117,74 @@ class XkiroTTS:
     async def stream_synthesize(
         self, text: str, params: TTSParams | None = None
     ) -> AsyncGenerator[bytes, None]:
-        """Synthesize full utterance then yield in one chunk.
+        """True streaming: yield 20ms PCM frames as xKiro's MP3 arrives.
 
-        xKiro streams MP3 frames over HTTP, but MP3 cannot be decoded frame-
-        by-frame into raw PCM without a persistent decoder (see the ffmpeg
-        subprocess trick in the local benchmark scripts) — same simplification
-        EdgeTTS already makes for its own MP3 output.
+        MP3 can't be decoded frame-by-frame with a one-shot decoder like
+        pydub, which is why this previously buffered the whole response and
+        yielded it as a single chunk — making time-to-first-audio equal to
+        *total* synthesis time (~0.9-1.5s measured) instead of time to first
+        byte. A persistent ffmpeg subprocess decodes incrementally, so the
+        first frames reach the caller while xKiro is still generating.
         """
-        pcm = await self.synthesize(text, params)
+        if not text or not text.strip():
 
-        async def _gen() -> AsyncGenerator[bytes, None]:
-            if pcm:
+            async def _empty() -> AsyncGenerator[bytes, None]:
+                return
+                yield b""  # pragma: no cover
+
+            return _empty()
+
+        return self._stream_pcm(text)
+
+    async def _stream_pcm(self, text: str) -> AsyncGenerator[bytes, None]:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            # Without these, ffmpeg buffers a chunk of input to probe the
+            # format before emitting anything — pure added latency when we
+            # already know xKiro returns MP3.
+            "-f", "mp3", "-probesize", "32", "-analyzeduration", "0",
+            "-i", "pipe:0",
+            "-ar", str(_TARGET_SR), "-ac", "1", "-f", "s16le",
+            "-flush_packets", "1",
+            "pipe:1",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        assert proc.stdin is not None and proc.stdout is not None
+
+        async def _feed() -> None:
+            """Pump xKiro's MP3 bytes into the decoder as they arrive."""
+            try:
+                async with self._get_client().stream(
+                    "POST", self._tts_url, headers=self._headers(), json=self._payload(text)
+                ) as resp:
+                    resp.raise_for_status()
+                    async for chunk in resp.aiter_bytes():
+                        proc.stdin.write(chunk)
+                        await proc.stdin.drain()
+            except (httpx.HTTPError, BrokenPipeError, ConnectionResetError) as exc:
+                logger.warning("xKiro TTS stream error: %s", exc)
+            finally:
+                with contextlib.suppress(BrokenPipeError, ConnectionResetError):
+                    proc.stdin.close()
+
+        feeder = asyncio.create_task(_feed())
+        try:
+            while True:
+                pcm = await proc.stdout.read(_PCM_CHUNK_BYTES)
+                if not pcm:
+                    break
                 yield pcm
-
-        return _gen()
+        finally:
+            feeder.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await feeder
+            if proc.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
+            with contextlib.suppress(Exception):
+                await proc.wait()
 
     async def stream_step(
         self,
