@@ -28,13 +28,22 @@ pipeline {
 
         stage('Push to Harbor') {
             steps {
+                // `docker login` always attempts HTTPS regardless of the
+                // dind daemon's --insecure-registry config (a different
+                // code path from push/pull) — confirmed live 2026-08-10 in
+                // omni-gcp-deploy's Jenkinsfile, same fix applied here:
+                // write ~/.docker/config.json directly instead of logging in.
                 withCredentials([usernamePassword(
                     credentialsId: 'harbor-ai-voice-robot',
                     usernameVariable: 'HARBOR_USER',
                     passwordVariable: 'HARBOR_PASS'
                 )]) {
                     sh """
-                        echo "\$HARBOR_PASS" | docker login ${HARBOR.split('/')[0]} -u "\$HARBOR_USER" --password-stdin
+                        mkdir -p ~/.docker
+                        AUTH=\$(printf '%s:%s' "\$HARBOR_USER" "\$HARBOR_PASS" | base64 -w0)
+                        cat > ~/.docker/config.json <<EOF
+{"auths":{"${HARBOR.split('/')[0]}":{"auth":"\$AUTH"}}}
+EOF
                         docker push ${HARBOR}/api:${GIT_SHA}
                         docker push ${HARBOR}/api:latest
                         docker push ${HARBOR}/portal:${GIT_SHA}
