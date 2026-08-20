@@ -18,7 +18,19 @@ pipeline {
     stages {
         stage('Build images') {
             steps {
+                // The dind sidecar can still be starting up when this stage
+                // begins (its own container readiness isn't gated on ours) —
+                // wait for `docker info` to succeed instead of guessing a
+                // fixed sleep; avoids the intermittent "Cannot connect to
+                // the Docker daemon at tcp://localhost:2375" failure seen
+                // when the build pod is freshly (re)scheduled.
                 sh """
+                    for i in \$(seq 1 30); do
+                        docker info >/dev/null 2>&1 && break
+                        echo "Waiting for docker daemon... (\$i/30)"
+                        sleep 2
+                    done
+                    docker info >/dev/null 2>&1 || { echo "docker daemon never became ready"; exit 1; }
                     docker build -f apps/api/Dockerfile -t ${HARBOR}/api:${GIT_SHA} -t ${HARBOR}/api:latest .
                     docker build -f apps/portal/Dockerfile -t ${HARBOR}/portal:${GIT_SHA} -t ${HARBOR}/portal:latest .
                     docker build -f services/voice/Dockerfile -t ${HARBOR}/voice:${GIT_SHA} -t ${HARBOR}/voice:latest services/voice/
