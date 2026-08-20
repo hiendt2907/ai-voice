@@ -6,7 +6,7 @@
   "voice_profile": "linh_clone_v1",
   "entry_step": "greeting",
   "disable_fillers": true,
-  "linkedKbTags": ["dat_lich", "lich_kham", "noi_soi"],
+  "linkedKbTags": [],
   "steps": [
     {
       "id": "greeting",
@@ -15,8 +15,14 @@
         {
           "id": "v1",
           "beats": [
-            {"text": "Dạ, Doctor Check xin nghe ạ.", "pause_after": "medium"},
-            {"text": "Em có thể hỗ trợ gì cho anh chị ạ?", "pause_after": "turn"}
+            {
+              "text": "Dạ, Doctor Check xin nghe ạ.",
+              "pause_after": "medium"
+            },
+            {
+              "text": "Em có thể hỗ trợ gì cho anh chị ạ?",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
@@ -24,29 +30,56 @@
         {
           "id": "r1",
           "beats": [
-            {"text": "Dạ anh chị muốn đặt lịch khám hay cần hỗ trợ gì ạ?", "pause_after": "turn"}
+            {
+              "text": "Dạ anh chị muốn đặt lịch khám hay cần hỗ trợ gì ạ?",
+              "pause_after": "turn"
+            }
           ]
         },
         {
           "id": "r2",
           "beats": [
-            {"text": "Dạ em có thể hỗ trợ đặt lịch khám,", "pause_after": "short"},
-            {"text": "hoặc trả lời thắc mắc về dịch vụ ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ em có thể hỗ trợ đặt lịch khám,",
+              "pause_after": "short"
+            },
+            {
+              "text": "hoặc trả lời thắc mắc về dịch vụ ạ.",
+              "pause_after": "turn"
+            }
           ]
         },
         {
           "id": "r3",
           "beats": [
-            {"text": "Dạ em xin phép chuyển anh chị tới nhân viên để hỗ trợ trực tiếp ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ em xin phép chuyển anh chị tới nhân viên để hỗ trợ trực tiếp ạ.",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
       "transitions": [
-        {"when": "intent == 'book_appointment'", "goto": "collect_date"},
-        {"when": "intent == 'check_availability'", "goto": "collect_date"},
-        {"when": "intent == 'check_result'", "goto": "check_result"},
-        {"when": "intent == 'cancel_appointment'", "goto": "handle_cancel"},
-        {"when": "intent == 'speak_to_staff'", "goto": "handoff_to_staff"}
+        {
+          "when": "intent == 'book_appointment'",
+          "goto": "collect_date"
+        },
+        {
+          "when": "intent == 'check_availability'",
+          "goto": "collect_date"
+        },
+        {
+          "when": "intent == 'check_result'",
+          "goto": "check_result"
+        },
+        {
+          "when": "intent == 'cancel_appointment'",
+          "goto": "handle_cancel"
+        },
+        {
+          "when": "intent == 'speak_to_staff'",
+          "goto": "handoff_to_staff"
+        }
       ],
       "fallback_goto": "handoff_to_staff",
       "max_no_match": 3
@@ -58,7 +91,10 @@
         {
           "id": "v1",
           "beats": [
-            {"text": "Dạ, anh chị muốn đặt lịch khám vào ngày nào ạ?", "pause_after": "turn"}
+            {
+              "text": "Dạ, anh chị muốn đặt lịch khám vào ngày nào ạ?",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
@@ -66,28 +102,44 @@
         {
           "id": "r1",
           "beats": [
-            {"text": "Dạ anh chị cho em biết ngày muốn đến khám ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ anh chị cho em biết ngày muốn đến khám ạ.",
+              "pause_after": "turn"
+            }
           ]
         },
         {
           "id": "r2",
           "beats": [
-            {"text": "Anh chị có thể nói hôm nay, ngày mai, hoặc ngày cụ thể ạ.", "pause_after": "turn"}
+            {
+              "text": "Anh chị có thể nói hôm nay, ngày mai, hoặc ngày cụ thể ạ.",
+              "pause_after": "turn"
+            }
           ]
         },
         {
           "id": "r3",
           "beats": [
-            {"text": "Dạ em xin phép chuyển anh chị tới nhân viên để hỗ trợ trực tiếp ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ em xin phép chuyển anh chị tới nhân viên để hỗ trợ trực tiếp ạ.",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
       "transitions": [
-        {"when": "slot.appointment_date != null && slot.time_slot != null", "goto": "confirm_time_available"},
-        {"when": "slot.appointment_date != null", "goto": "collect_time"}
+        {
+          "when": "slot.appointment_date != null && slot.time_slot != null",
+          "goto": "confirm_time_available"
+        },
+        {
+          "when": "slot.appointment_date != null",
+          "goto": "collect_time"
+        }
       ],
       "fallback_goto": "handoff_to_staff",
-      "max_no_match": 3},
+      "max_no_match": 3
+    },
     {
       "id": "collect_time",
       "type": "speak_listen",
@@ -95,7 +147,10 @@
         {
           "id": "v1",
           "beats": [
-            {"text": "Dạ, anh chị cho em biết giờ cụ thể muốn đặt ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ, anh chị cho em biết giờ cụ thể muốn đặt ạ.",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
@@ -103,24 +158,36 @@
         {
           "id": "r1",
           "beats": [
-            {"text": "Dạ anh chị muốn khám buổi sáng hay buổi chiều ạ?", "pause_after": "turn"}
+            {
+              "text": "Dạ anh chị muốn khám buổi sáng hay buổi chiều ạ?",
+              "pause_after": "turn"
+            }
           ]
         },
         {
           "id": "r2",
           "beats": [
-            {"text": "Anh chị có thể nói ví dụ: tám giờ sáng, hoặc ba giờ chiều ạ.", "pause_after": "turn"}
+            {
+              "text": "Anh chị có thể nói ví dụ: tám giờ sáng, hoặc ba giờ chiều ạ.",
+              "pause_after": "turn"
+            }
           ]
         },
         {
           "id": "r3",
           "beats": [
-            {"text": "Dạ em xin phép chuyển anh chị tới nhân viên để hỗ trợ ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ em xin phép chuyển anh chị tới nhân viên để hỗ trợ ạ.",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
       "transitions": [
-        {"when": "slot.time_slot != null", "goto": "confirm_time_available"}
+        {
+          "when": "slot.time_slot != null",
+          "goto": "confirm_time_available"
+        }
       ],
       "fallback_goto": "handoff_to_staff",
       "max_no_match": 3
@@ -132,9 +199,19 @@
         {
           "id": "v1",
           "beats": [
-            {"text": "Dạ, anh chị giữ máy giúp em, để em kiểm tra chính xác giờ cho mình ạ.", "pause_after": "medium"},
-            {"text": "Dạ, hiện tại {{time_slot}} ngày {{appointment_date}} phòng khám vẫn còn trống lịch ạ,", "pause_after": "short", "speaking_rate": 0.9},
-            {"text": "em đặt luôn cho mình nhé?", "pause_after": "turn"}
+            {
+              "text": "Dạ, anh chị giữ máy giúp em, để em kiểm tra chính xác giờ cho mình ạ.",
+              "pause_after": "medium"
+            },
+            {
+              "text": "Dạ, hiện tại {{time_slot}} ngày {{appointment_date}} phòng khám vẫn còn trống lịch ạ,",
+              "pause_after": "short",
+              "speaking_rate": 0.9
+            },
+            {
+              "text": "em đặt luôn cho mình nhé?",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
@@ -142,27 +219,48 @@
         {
           "id": "r1",
           "beats": [
-            {"text": "Dạ em xác nhận lại: {{time_slot}} ngày {{appointment_date}} vẫn còn trống.", "pause_after": "short"},
-            {"text": "Anh chị đồng ý đặt không ạ?", "pause_after": "turn"}
+            {
+              "text": "Dạ em xác nhận lại: {{time_slot}} ngày {{appointment_date}} vẫn còn trống.",
+              "pause_after": "short"
+            },
+            {
+              "text": "Anh chị đồng ý đặt không ạ?",
+              "pause_after": "turn"
+            }
           ]
         },
         {
           "id": "r2",
           "beats": [
-            {"text": "Dạ anh chị nói đúng để em đặt, hoặc không để em đổi giờ khác ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ anh chị nói đúng để em đặt, hoặc không để em đổi giờ khác ạ.",
+              "pause_after": "turn"
+            }
           ]
         },
         {
           "id": "r3",
           "beats": [
-            {"text": "Dạ em xin phép chuyển anh chị tới nhân viên để hỗ trợ ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ em xin phép chuyển anh chị tới nhân viên để hỗ trợ ạ.",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
       "transitions": [
-        {"when": "intent == 'confirm'", "goto": "collect_patient_info"},
-        {"when": "intent == 'deny'", "goto": "collect_time"},
-        {"when": "intent == 'change_time'", "goto": "collect_time"}
+        {
+          "when": "intent == 'confirm'",
+          "goto": "collect_patient_info"
+        },
+        {
+          "when": "intent == 'deny'",
+          "goto": "collect_time"
+        },
+        {
+          "when": "intent == 'change_time'",
+          "goto": "collect_time"
+        }
       ],
       "fallback_goto": "handoff_to_staff",
       "max_no_match": 3
@@ -174,7 +272,10 @@
         {
           "id": "v1",
           "beats": [
-            {"text": "Dạ, vậy anh chị cho em xin họ tên và số điện thoại để em tiến hành đặt lịch ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ, vậy anh chị cho em xin họ tên và số điện thoại để em tiến hành đặt lịch ạ.",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
@@ -182,28 +283,44 @@
         {
           "id": "r1",
           "beats": [
-            {"text": "Anh chị cho em xin họ tên đầy đủ và số điện thoại ạ.", "pause_after": "turn"}
+            {
+              "text": "Anh chị cho em xin họ tên đầy đủ và số điện thoại ạ.",
+              "pause_after": "turn"
+            }
           ]
         },
         {
           "id": "r2",
           "beats": [
-            {"text": "Ví dụ anh chị có thể nói: Nguyễn Văn A, số điện thoại 09 xx xxx xxx ạ.", "pause_after": "turn"}
+            {
+              "text": "Ví dụ anh chị có thể nói: Nguyễn Văn A, số điện thoại 09 xx xxx xxx ạ.",
+              "pause_after": "turn"
+            }
           ]
         },
         {
           "id": "r3",
           "beats": [
-            {"text": "Dạ em xin phép chuyển anh chị tới nhân viên để hỗ trợ ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ em xin phép chuyển anh chị tới nhân viên để hỗ trợ ạ.",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
       "transitions": [
-        {"when": "slot.patient_name != null && slot.patient_phone != null", "goto": "confirm_booking"},
-        {"when": "slot.patient_name != null", "goto": "collect_phone"}
+        {
+          "when": "slot.patient_name != null && slot.patient_phone != null",
+          "goto": "confirm_booking"
+        },
+        {
+          "when": "slot.patient_name != null",
+          "goto": "collect_phone"
+        }
       ],
       "fallback_goto": "handoff_to_staff",
-      "max_no_match": 3},
+      "max_no_match": 3
+    },
     {
       "id": "collect_phone",
       "type": "speak_listen",
@@ -211,7 +328,10 @@
         {
           "id": "v1",
           "beats": [
-            {"text": "Dạ, anh chị cho em xin thêm số điện thoại để xác nhận lịch ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ, anh chị cho em xin thêm số điện thoại để xác nhận lịch ạ.",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
@@ -219,21 +339,31 @@
         {
           "id": "r1",
           "beats": [
-            {"text": "Dạ anh chị cho em số điện thoại liên hệ ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ anh chị cho em số điện thoại liên hệ ạ.",
+              "pause_after": "turn"
+            }
           ]
         },
         {
           "id": "r2",
           "beats": [
-            {"text": "Dạ em xin phép chuyển anh chị tới nhân viên để hỗ trợ ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ em xin phép chuyển anh chị tới nhân viên để hỗ trợ ạ.",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
       "transitions": [
-        {"when": "slot.patient_phone != null", "goto": "confirm_booking"}
+        {
+          "when": "slot.patient_phone != null",
+          "goto": "confirm_booking"
+        }
       ],
       "fallback_goto": "handoff_to_staff",
-      "max_no_match": 2},
+      "max_no_match": 2
+    },
     {
       "id": "confirm_booking",
       "type": "speak_listen",
@@ -241,11 +371,29 @@
         {
           "id": "v1",
           "beats": [
-            {"text": "Dạ, em nhận thông tin rồi ạ, em xin xác nhận lại.", "pause_after": "medium"},
-            {"text": "Anh chị {{patient_name}},", "pause_after": "short", "speaking_rate": 0.85},
-            {"text": "số điện thoại {{patient_phone}},", "pause_after": "short", "speaking_rate": 0.85},
-            {"text": "đặt lịch khám vào {{time_slot}} ngày {{appointment_date}}.", "pause_after": "medium", "speaking_rate": 0.85},
-            {"text": "Anh chị xem giúp em thông tin đã đúng chưa ạ?", "pause_after": "turn"}
+            {
+              "text": "Dạ, em nhận thông tin rồi ạ, em xin xác nhận lại.",
+              "pause_after": "medium"
+            },
+            {
+              "text": "Anh chị {{patient_name}},",
+              "pause_after": "short",
+              "speaking_rate": 0.85
+            },
+            {
+              "text": "số điện thoại {{patient_phone}},",
+              "pause_after": "short",
+              "speaking_rate": 0.85
+            },
+            {
+              "text": "đặt lịch khám vào {{time_slot}} ngày {{appointment_date}}.",
+              "pause_after": "medium",
+              "speaking_rate": 0.85
+            },
+            {
+              "text": "Anh chị xem giúp em thông tin đã đúng chưa ạ?",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
@@ -253,26 +401,44 @@
         {
           "id": "r1",
           "beats": [
-            {"text": "Dạ anh chị xác nhận thông tin đúng không ạ?", "pause_after": "turn"}
+            {
+              "text": "Dạ anh chị xác nhận thông tin đúng không ạ?",
+              "pause_after": "turn"
+            }
           ]
         },
         {
           "id": "r2",
           "beats": [
-            {"text": "Dạ anh chị nói đúng để em đặt lịch, hoặc không để em sửa lại ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ anh chị nói đúng để em đặt lịch, hoặc không để em sửa lại ạ.",
+              "pause_after": "turn"
+            }
           ]
         },
         {
           "id": "r3",
           "beats": [
-            {"text": "Dạ em xin phép chuyển anh chị tới nhân viên xác nhận trực tiếp ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ em xin phép chuyển anh chị tới nhân viên xác nhận trực tiếp ạ.",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
       "transitions": [
-        {"when": "intent == 'confirm'", "goto": "booking_success"},
-        {"when": "intent == 'deny'", "goto": "ask_what_to_change"},
-        {"when": "intent == 'request_change'", "goto": "ask_what_to_change"}
+        {
+          "when": "intent == 'confirm'",
+          "goto": "booking_success"
+        },
+        {
+          "when": "intent == 'deny'",
+          "goto": "ask_what_to_change"
+        },
+        {
+          "when": "intent == 'request_change'",
+          "goto": "ask_what_to_change"
+        }
       ],
       "fallback_goto": "handoff_to_staff",
       "max_no_match": 3
@@ -284,8 +450,14 @@
         {
           "id": "v1",
           "beats": [
-            {"text": "Dạ, anh chị muốn sửa thông tin nào ạ?", "pause_after": "medium"},
-            {"text": "Họ tên, số điện thoại, ngày khám, hay giờ khám?", "pause_after": "turn"}
+            {
+              "text": "Dạ, anh chị muốn sửa thông tin nào ạ?",
+              "pause_after": "medium"
+            },
+            {
+              "text": "Họ tên, số điện thoại, ngày khám, hay giờ khám?",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
@@ -293,22 +465,43 @@
         {
           "id": "r1",
           "beats": [
-            {"text": "Dạ anh chị nói mục cần sửa: tên, số điện thoại, ngày, hoặc giờ ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ anh chị nói mục cần sửa: tên, số điện thoại, ngày, hoặc giờ ạ.",
+              "pause_after": "turn"
+            }
           ]
         },
         {
           "id": "r2",
           "beats": [
-            {"text": "Dạ em xin phép chuyển anh chị tới nhân viên để hỗ trợ ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ em xin phép chuyển anh chị tới nhân viên để hỗ trợ ạ.",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
       "transitions": [
-        {"when": "intent == 'change_name'", "goto": "collect_patient_info"},
-        {"when": "intent == 'change_date'", "goto": "collect_date"},
-        {"when": "intent == 'change_time'", "goto": "collect_time"},
-        {"when": "intent == 'confirm'", "goto": "confirm_booking"},
-        {"when": "intent == 'no_change'", "goto": "confirm_booking"}
+        {
+          "when": "intent == 'change_name'",
+          "goto": "collect_patient_info"
+        },
+        {
+          "when": "intent == 'change_date'",
+          "goto": "collect_date"
+        },
+        {
+          "when": "intent == 'change_time'",
+          "goto": "collect_time"
+        },
+        {
+          "when": "intent == 'confirm'",
+          "goto": "confirm_booking"
+        },
+        {
+          "when": "intent == 'no_change'",
+          "goto": "confirm_booking"
+        }
       ],
       "fallback_goto": "handoff_to_staff",
       "max_no_match": 2
@@ -320,9 +513,18 @@
         {
           "id": "v1",
           "beats": [
-            {"text": "Dạ, em đặt lịch cho mình xong rồi ạ.", "pause_after": "medium"},
-            {"text": "Phòng khám sẽ nhắn tin xác nhận lịch hẹn tới số {{patient_phone}} trước ngày khám ạ.", "pause_after": "medium"},
-            {"text": "Anh chị cần em hỗ trợ gì thêm không ạ?", "pause_after": "turn"}
+            {
+              "text": "Dạ, em đặt lịch cho mình xong rồi ạ.",
+              "pause_after": "medium"
+            },
+            {
+              "text": "Phòng khám sẽ nhắn tin xác nhận lịch hẹn tới số {{patient_phone}} trước ngày khám ạ.",
+              "pause_after": "medium"
+            },
+            {
+              "text": "Anh chị cần em hỗ trợ gì thêm không ạ?",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
@@ -330,16 +532,34 @@
         {
           "id": "r1",
           "beats": [
-            {"text": "Dạ anh chị có cần em hỗ trợ thêm gì không ạ?", "pause_after": "turn"}
+            {
+              "text": "Dạ anh chị có cần em hỗ trợ thêm gì không ạ?",
+              "pause_after": "turn"
+            }
           ]
         }
       ],
       "transitions": [
-        {"when": "intent == 'deny'", "goto": "farewell"},
-        {"when": "intent == 'goodbye'", "goto": "farewell"},
-        {"when": "intent == 'service_inquiry'", "goto": "handoff_to_staff"},
-        {"when": "intent == 'check_result'", "goto": "check_result"},
-        {"when": "intent == 'speak_to_staff'", "goto": "handoff_to_staff"}
+        {
+          "when": "intent == 'deny'",
+          "goto": "farewell"
+        },
+        {
+          "when": "intent == 'goodbye'",
+          "goto": "farewell"
+        },
+        {
+          "when": "intent == 'service_inquiry'",
+          "goto": "handoff_to_staff"
+        },
+        {
+          "when": "intent == 'check_result'",
+          "goto": "check_result"
+        },
+        {
+          "when": "intent == 'speak_to_staff'",
+          "goto": "handoff_to_staff"
+        }
       ],
       "fallback_goto": "farewell",
       "max_no_match": 2
@@ -351,9 +571,18 @@
         {
           "id": "v1",
           "beats": [
-            {"text": "Dạ, em cảm ơn anh chị.", "pause_after": "short"},
-            {"text": "Doctor Check rất vui được tiếp đón anh chị vào {{time_slot}} ngày {{appointment_date}} ạ.", "pause_after": "medium"},
-            {"text": "Chúc anh chị sức khỏe ạ.", "pause_after": "long"}
+            {
+              "text": "Dạ, em cảm ơn anh chị.",
+              "pause_after": "short"
+            },
+            {
+              "text": "Doctor Check rất vui được tiếp đón anh chị vào {{time_slot}} ngày {{appointment_date}} ạ.",
+              "pause_after": "medium"
+            },
+            {
+              "text": "Chúc anh chị sức khỏe ạ.",
+              "pause_after": "long"
+            }
           ]
         }
       ]
@@ -365,8 +594,14 @@
         {
           "id": "v1",
           "beats": [
-            {"text": "Dạ để tra cứu kết quả xét nghiệm,", "pause_after": "short"},
-            {"text": "em xin phép chuyển anh chị sang nhân viên chuyên trách ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ để tra cứu kết quả xét nghiệm,",
+              "pause_after": "short"
+            },
+            {
+              "text": "em xin phép chuyển anh chị sang nhân viên chuyên trách ạ.",
+              "pause_after": "turn"
+            }
           ]
         }
       ]
@@ -378,8 +613,14 @@
         {
           "id": "v1",
           "beats": [
-            {"text": "Dạ để hủy lịch hẹn,", "pause_after": "short"},
-            {"text": "em cần kết nối anh chị với nhân viên để xác nhận thông tin ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ để hủy lịch hẹn,",
+              "pause_after": "short"
+            },
+            {
+              "text": "em cần kết nối anh chị với nhân viên để xác nhận thông tin ạ.",
+              "pause_after": "turn"
+            }
           ]
         }
       ]
@@ -391,8 +632,14 @@
         {
           "id": "v1",
           "beats": [
-            {"text": "Dạ em xin phép chuyển anh chị sang nhân viên hỗ trợ trực tiếp ạ.", "pause_after": "medium"},
-            {"text": "Anh chị vui lòng giữ máy giây lát ạ.", "pause_after": "turn"}
+            {
+              "text": "Dạ em xin phép chuyển anh chị sang nhân viên hỗ trợ trực tiếp ạ.",
+              "pause_after": "medium"
+            },
+            {
+              "text": "Anh chị vui lòng giữ máy giây lát ạ.",
+              "pause_after": "turn"
+            }
           ]
         }
       ]
@@ -402,145 +649,307 @@
     {
       "intent": "book_appointment",
       "examples": [
-        {"text": "tôi muốn đặt lịch khám"},
-        {"text": "đặt hẹn khám bệnh"},
-        {"text": "cho tôi đặt lịch"},
-        {"text": "tôi cần khám bác sĩ"},
-        {"text": "đăng ký khám"},
-        {"text": "book lịch khám"},
-        {"text": "đặt lịch"},
-        {"text": "muốn đặt khám"}
+        {
+          "text": "tôi muốn đặt lịch khám"
+        },
+        {
+          "text": "đặt hẹn khám bệnh"
+        },
+        {
+          "text": "cho tôi đặt lịch"
+        },
+        {
+          "text": "tôi cần khám bác sĩ"
+        },
+        {
+          "text": "đăng ký khám"
+        },
+        {
+          "text": "book lịch khám"
+        },
+        {
+          "text": "đặt lịch"
+        },
+        {
+          "text": "muốn đặt khám"
+        }
       ],
-      "slots": ["appointment_date", "time_of_day", "patient_name", "patient_phone"]
+      "slots": [
+        "appointment_date",
+        "time_of_day",
+        "patient_name",
+        "patient_phone"
+      ]
     },
     {
       "intent": "check_availability",
       "examples": [
-        {"text": "hôm nay còn giờ nào trống"},
-        {"text": "còn lịch không"},
-        {"text": "giờ nào còn trống"},
-        {"text": "hôm nay được không"},
-        {"text": "còn chỗ không"},
-        {"text": "lịch khám còn không"},
-        {"text": "buổi chiều còn không"}
+        {
+          "text": "hôm nay còn giờ nào trống"
+        },
+        {
+          "text": "còn lịch không"
+        },
+        {
+          "text": "giờ nào còn trống"
+        },
+        {
+          "text": "hôm nay được không"
+        },
+        {
+          "text": "còn chỗ không"
+        },
+        {
+          "text": "lịch khám còn không"
+        },
+        {
+          "text": "buổi chiều còn không"
+        }
       ],
-      "slots": ["appointment_date", "time_of_day"]
+      "slots": [
+        "appointment_date",
+        "time_of_day"
+      ]
     },
     {
       "intent": "confirm",
       "examples": [
-        {"text": "đúng rồi"},
-        {"text": "đúng"},
-        {"text": "ok em"},
-        {"text": "ok"},
-        {"text": "được"},
-        {"text": "vâng"},
-        {"text": "ừ"},
-        {"text": "đồng ý"},
-        {"text": "chính xác"},
-        {"text": "đúng vậy"}
+        {
+          "text": "đúng rồi"
+        },
+        {
+          "text": "đúng"
+        },
+        {
+          "text": "ok em"
+        },
+        {
+          "text": "ok"
+        },
+        {
+          "text": "được"
+        },
+        {
+          "text": "vâng"
+        },
+        {
+          "text": "ừ"
+        },
+        {
+          "text": "đồng ý"
+        },
+        {
+          "text": "chính xác"
+        },
+        {
+          "text": "đúng vậy"
+        }
       ]
     },
     {
       "intent": "deny",
       "examples": [
-        {"text": "không"},
-        {"text": "sai rồi"},
-        {"text": "chưa đúng"},
-        {"text": "không phải"},
-        {"text": "sai"},
-        {"text": "không đồng ý"}
+        {
+          "text": "không"
+        },
+        {
+          "text": "sai rồi"
+        },
+        {
+          "text": "chưa đúng"
+        },
+        {
+          "text": "không phải"
+        },
+        {
+          "text": "sai"
+        },
+        {
+          "text": "không đồng ý"
+        }
       ]
     },
     {
       "intent": "goodbye",
       "examples": [
-        {"text": "không em anh cảm ơn"},
-        {"text": "không cần gì thêm"},
-        {"text": "thôi cảm ơn em"},
-        {"text": "cảm ơn rồi"},
-        {"text": "tạm biệt"},
-        {"text": "bye"}
+        {
+          "text": "không em anh cảm ơn"
+        },
+        {
+          "text": "không cần gì thêm"
+        },
+        {
+          "text": "thôi cảm ơn em"
+        },
+        {
+          "text": "cảm ơn rồi"
+        },
+        {
+          "text": "tạm biệt"
+        },
+        {
+          "text": "bye"
+        }
       ]
     },
     {
       "intent": "request_change",
       "examples": [
-        {"text": "muốn đổi"},
-        {"text": "cần sửa lại"},
-        {"text": "thông tin chưa đúng"},
-        {"text": "thay đổi thông tin"},
-        {"text": "sửa thông tin"},
-        {"text": "đổi lại"}
+        {
+          "text": "muốn đổi"
+        },
+        {
+          "text": "cần sửa lại"
+        },
+        {
+          "text": "thông tin chưa đúng"
+        },
+        {
+          "text": "thay đổi thông tin"
+        },
+        {
+          "text": "sửa thông tin"
+        },
+        {
+          "text": "đổi lại"
+        }
       ]
     },
     {
       "intent": "change_date",
       "examples": [
-        {"text": "đổi ngày"},
-        {"text": "ngày khác"},
-        {"text": "thay ngày"},
-        {"text": "đổi ngày khám"},
-        {"text": "muốn đổi ngày"}
+        {
+          "text": "đổi ngày"
+        },
+        {
+          "text": "ngày khác"
+        },
+        {
+          "text": "thay ngày"
+        },
+        {
+          "text": "đổi ngày khám"
+        },
+        {
+          "text": "muốn đổi ngày"
+        }
       ]
     },
     {
       "intent": "change_time",
       "examples": [
-        {"text": "đổi giờ"},
-        {"text": "đổi buổi"},
-        {"text": "giờ khác"},
-        {"text": "buổi khác"},
-        {"text": "thay đổi giờ"},
-        {"text": "muốn đổi giờ"}
+        {
+          "text": "đổi giờ"
+        },
+        {
+          "text": "đổi buổi"
+        },
+        {
+          "text": "giờ khác"
+        },
+        {
+          "text": "buổi khác"
+        },
+        {
+          "text": "thay đổi giờ"
+        },
+        {
+          "text": "muốn đổi giờ"
+        }
       ]
     },
     {
       "intent": "change_name",
       "examples": [
-        {"text": "đổi tên"},
-        {"text": "sửa tên"},
-        {"text": "tên sai"},
-        {"text": "tên không đúng"},
-        {"text": "muốn đổi tên"}
+        {
+          "text": "đổi tên"
+        },
+        {
+          "text": "sửa tên"
+        },
+        {
+          "text": "tên sai"
+        },
+        {
+          "text": "tên không đúng"
+        },
+        {
+          "text": "muốn đổi tên"
+        }
       ]
     },
     {
       "intent": "no_change",
       "examples": [
-        {"text": "không đổi"},
-        {"text": "không cần sửa"},
-        {"text": "giữ nguyên"},
-        {"text": "đúng hết rồi"},
-        {"text": "thông tin chính xác"}
+        {
+          "text": "không đổi"
+        },
+        {
+          "text": "không cần sửa"
+        },
+        {
+          "text": "giữ nguyên"
+        },
+        {
+          "text": "đúng hết rồi"
+        },
+        {
+          "text": "thông tin chính xác"
+        }
       ]
     },
     {
       "intent": "check_result",
       "examples": [
-        {"text": "tôi muốn xem kết quả xét nghiệm"},
-        {"text": "kết quả xét nghiệm của tôi"},
-        {"text": "tra cứu kết quả"},
-        {"text": "xem kết quả khám bệnh"}
+        {
+          "text": "tôi muốn xem kết quả xét nghiệm"
+        },
+        {
+          "text": "kết quả xét nghiệm của tôi"
+        },
+        {
+          "text": "tra cứu kết quả"
+        },
+        {
+          "text": "xem kết quả khám bệnh"
+        }
       ]
     },
     {
       "intent": "cancel_appointment",
       "examples": [
-        {"text": "tôi muốn hủy lịch"},
-        {"text": "hủy hẹn khám"},
-        {"text": "hủy lịch"},
-        {"text": "muốn hủy"}
+        {
+          "text": "tôi muốn hủy lịch"
+        },
+        {
+          "text": "hủy hẹn khám"
+        },
+        {
+          "text": "hủy lịch"
+        },
+        {
+          "text": "muốn hủy"
+        }
       ]
     },
     {
       "intent": "speak_to_staff",
       "examples": [
-        {"text": "cho tôi nói chuyện với nhân viên"},
-        {"text": "kết nối tới tổng đài viên"},
-        {"text": "chuyển máy cho tôi"},
-        {"text": "gặp nhân viên"},
-        {"text": "tôi muốn gặp người"}
+        {
+          "text": "cho tôi nói chuyện với nhân viên"
+        },
+        {
+          "text": "kết nối tới tổng đài viên"
+        },
+        {
+          "text": "chuyển máy cho tôi"
+        },
+        {
+          "text": "gặp nhân viên"
+        },
+        {
+          "text": "tôi muốn gặp người"
+        }
       ]
     }
   ]

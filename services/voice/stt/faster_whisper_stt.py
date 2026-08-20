@@ -15,6 +15,18 @@ import soundfile as sf
 
 logger = logging.getLogger(__name__)
 
+# Biases decoding toward clinic vocabulary. Whisper conditions on this text as
+# if it preceded the audio, so in-domain terms it would otherwise mangle become
+# the likelier decode — "khám nội khoa" was coming back as "khám nội qua".
+# Keep it short: the prompt competes with the audio for context, and a long one
+# makes the model start echoing it.
+_DOMAIN_PROMPT = (
+    "Phòng khám DoctorCheck. Đặt lịch khám nội khoa, ngoại khoa, tai mũi họng, "
+    "da liễu, tim mạch, sản phụ khoa, nhi khoa. Nội soi dạ dày, đại tràng. "
+    "Khám tổng quát, xét nghiệm, siêu âm. Đặt lịch, hủy lịch, đổi giờ, "
+    "kết quả xét nghiệm, bảo hiểm y tế."
+)
+
 
 @dataclass(frozen=True)
 class STTResult:
@@ -80,6 +92,7 @@ class FasterWhisperSTT:
             task="transcribe",
             beam_size=3,
             vad_filter=False,
+            initial_prompt=_DOMAIN_PROMPT,
         )
 
         texts: list[str] = []
