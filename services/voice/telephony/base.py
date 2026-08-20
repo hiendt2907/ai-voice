@@ -27,6 +27,14 @@ class TelephonyAdapter(Protocol):
         """
         ...
 
+    def normalize_inbound_binary(self, data: bytes) -> dict[str, Any] | None:
+        """Optional: binary WS frame → internal event dict, for providers
+        that send raw audio as binary frames instead of base64-in-JSON
+        (e.g. FreeSWITCH's mod_audio_fork). Adapters that only ever receive
+        JSON text frames don't need to implement this — api/routers/ws.py's
+        receive loop only calls it when a binary frame actually arrives."""
+        ...
+
     def encode_outbound(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         """Internal (CloudFone-shaped) event dict → zero or more provider wire messages.
 

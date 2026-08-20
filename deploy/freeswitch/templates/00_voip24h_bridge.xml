@@ -1,0 +1,15 @@
+<!--
+Every call arriving via the voip24h gateway (registered extension) lands in
+the "public" context (external profile default). voip24h's /v3/call/dial
+rings this extension first, then bridges to the outbound phone number once
+answered — so any call landing here IS the AI's leg of that bridge.
+Catch-all is safe: this gateway/box has no other purpose.
+-->
+<include>
+  <extension name="voip24h_ai_bridge">
+    <condition>
+      <action application="answer"/>
+      <action application="lua" data="voip24h_bridge.lua"/>
+    </condition>
+  </extension>
+</include>

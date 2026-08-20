@@ -42,6 +42,52 @@ router = APIRouter(prefix="/ws", tags=["websocket"])
 _settings = Settings()
 
 
+def _load_script_file(name_or_path: str) -> dict:  # type: ignore[type-arg]
+    """Load a script JSON by name from scripts/examples/ or by path.
+
+    Same lookup `simulator/run_sim.py::_find_script` uses — reused here for
+    providers with no live orchestrator supplying `script` in their own
+    "start" message (e.g. FreeSWITCH: our own Lua bridge script can't
+    reasonably embed a full script tree in `uuid_audio_fork`'s single
+    command-line-style metadata argument), via the `?script_id=` query param.
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    path = Path(name_or_path)
+    if not path.exists():
+        here = Path(__file__).parent.parent  # services/voice/
+        for candidate in (
+            here / "../../scripts/examples" / f"{name_or_path}.json",
+            here / "../../scripts/examples" / name_or_path,
+        ):
+            if candidate.exists():
+                path = candidate
+                break
+    with open(path, encoding="utf-8") as f:
+        import json  # noqa: PLC0415
+        return json.load(f)
+
+
+async def _iter_wire_frames(ws: WebSocket):
+    """Like `WebSocket.iter_json()`, but yields raw `bytes` for binary
+    frames instead of choking on them — needed for providers whose audio
+    arrives as binary WS frames (mod_audio_fork) rather than base64-in-JSON
+    (CloudFone). Text frames are still parsed as JSON, unchanged."""
+    import json  # noqa: PLC0415
+
+    try:
+        while True:
+            message = await ws.receive()
+            if message["type"] == "websocket.disconnect":
+                raise WebSocketDisconnect(message.get("code", 1000), message.get("reason"))
+            if "bytes" in message and message["bytes"] is not None:
+                yield message["bytes"]
+            elif "text" in message and message["text"] is not None:
+                yield json.loads(message["text"])
+    except WebSocketDisconnect:
+        pass
+
+
 @router.get("/tts-health")
 async def tts_health() -> dict:
     """TTS engine circuit breaker + quota status."""
@@ -186,11 +232,15 @@ async def call_ws(ws: WebSocket, script_id: str = "", provider: str = "cloudfone
     turn_task = asyncio.create_task(turn_orch.turn_handler())
 
     try:
-        async for wire_msg in ws.iter_json():
+        async for wire_msg in _iter_wire_frames(ws):
             if turn_orch.call_ended.is_set():
                 break
 
-            raw = adapter.normalize_inbound(wire_msg)
+            if isinstance(wire_msg, bytes):
+                binary_handler = getattr(adapter, "normalize_inbound_binary", None)
+                raw = binary_handler(wire_msg) if binary_handler is not None else None
+            else:
+                raw = adapter.normalize_inbound(wire_msg)
             if raw is None:
                 continue  # provider message with no internal-event equivalent
 
@@ -220,6 +270,11 @@ async def call_ws(ws: WebSocket, script_id: str = "", provider: str = "cloudfone
                 ctx.caller_number = start.caller_number
                 ctx.caller_direction = start.direction
                 ctx.script = raw.get("script", {})
+                if not ctx.script and script_id:
+                    try:
+                        ctx.script = _load_script_file(script_id)
+                    except Exception as exc:
+                        logger.error("Failed to load script_id=%s: %s", script_id, exc)
                 ctx.steps = _index_steps(ctx.script)
                 ctx.interception_mode = raw.get("interception_mode", "full")
                 ctx.interception_domains = raw.get("interception_domains", [])

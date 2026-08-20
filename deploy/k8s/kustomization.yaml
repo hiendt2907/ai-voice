@@ -19,6 +19,7 @@ resources:
   - portal/ingress.yaml
   - voice/deployment.yaml
   - voice/service.yaml
+  - freeswitch/deployment.yaml
 
 # Jenkins (Jenkinsfile, "Update manifests" stage) rewrites the newTag fields
 # below to the built git-sha and commits/pushes to Gitea after a successful

@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: freeswitch
+  namespace: ai-voice
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: freeswitch
+  template:
+    metadata:
+      labels:
+        app: freeswitch
+    spec:
+      # SIP/RTP wants direct host networking — k8s Service port-mapping
+      # doesn't preserve the client-visible source port SIP registration and
+      # RTP NAT traversal depend on. dnsPolicy override keeps cluster DNS
+      # (voice.ai-voice.svc.cluster.local) resolvable despite hostNetwork.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      imagePullSecrets:
+        - name: harbor-ai-voice-pull
+      containers:
+        - name: freeswitch
+          image: harbor.harbor.svc.cluster.local/ai-voice/freeswitch:v1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: VOICE_WS_URL
+              value: "ws://voice.ai-voice.svc.cluster.local:8000/ws/call?provider=freeswitch&script_id=booking_inbound_v1"
+            - name: SIP_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: ai-voice-voip24h-sip
+                  key: SIP_SERVER
+            - name: SIP_EXTENSION
+              valueFrom:
+                secretKeyRef:
+                  name: ai-voice-voip24h-sip
+                  key: SIP_EXTENSION
+            - name: SIP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ai-voice-voip24h-sip
+                  key: SIP_PASSWORD
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 512Mi
