@@ -193,6 +193,22 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     except Exception as exc:
         logger.warning("NLU store not loaded (will use fallbacks): %s", exc)
 
+    # Warm up the sentence-embedding model. Loading the KB/NLU stores does not
+    # touch it — both arrive with embeddings precomputed — so without this the
+    # model is first fetched and initialised inside the very first caller's
+    # turn, blocking it for ~7s (long enough for a short call to end before
+    # NLU ever returns).
+    try:
+        import asyncio as _asyncio  # noqa: PLC0415
+
+        from rag.embedder import embed_query  # noqa: PLC0415
+
+        _loop = _asyncio.get_running_loop()
+        await _loop.run_in_executor(None, embed_query, "khởi động")
+        logger.info("Embedding model warmed up")
+    except Exception as exc:
+        logger.warning("Embedding model warmup failed: %s", exc)
+
     # Warm up Piper TTS singleton (eliminates 300ms first-call JIT penalty)
     try:
         # Probe: piper-tts is an optional extra (local-inference), absent in prod image.
