@@ -41,14 +41,10 @@ async def _run(args: argparse.Namespace) -> None:
     async def on_call_start(call: SipCall) -> None:
         logger.info("Call answered: caller=%s — bridging to %s", call.caller_number, args.ws_url)
         if args.pre_roll_s > 0:
-            # voip24h answers our SIP leg at machine speed, but the actual
-            # PSTN bridge to the human's phone can take several seconds
-            # longer to come up — starting the AI's greeting immediately
-            # plays it into dead air. Wait before opening the bridge (which
-            # triggers the greeting on connect); this doesn't delay
-            # capturing the caller's audio, since there's nothing real to
-            # capture until the human leg is actually up either.
-            logger.info("Pre-roll: waiting %.1fs for voip24h's PSTN bridge", args.pre_roll_s)
+            # Delays opening the bridge, which is what triggers the greeting.
+            # Kept as an opt-in escape hatch in case a provider really does
+            # bring its PSTN leg up late, but not needed for voip24h.
+            logger.info("Pre-roll: waiting %.1fs before bridging", args.pre_roll_s)
             await asyncio.sleep(args.pre_roll_s)
         try:
             await bridge_call(call, args.ws_url, script, campaign_id=args.campaign_id)
@@ -92,8 +88,10 @@ def main() -> None:
     parser.add_argument("--script", required=True, help="Path to a call-script JSON file")
     parser.add_argument("--campaign-id", default=None)
     parser.add_argument(
-        "--pre-roll-s", type=float, default=3.0,
-        help="Seconds to wait after answer before bridging (voip24h PSTN-bridge delay workaround)",
+        "--pre-roll-s", type=float, default=0.0,
+        help="Seconds to wait after answer before bridging. Off by default; the "
+             "silence it was added to work around turned out to be a TTS "
+             "misconfiguration, not voip24h's PSTN bridge coming up late.",
     )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
