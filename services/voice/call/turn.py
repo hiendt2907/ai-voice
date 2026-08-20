@@ -29,6 +29,8 @@ from call.events import CallContext, HandoffPayload, HangupPayload
 from call.handoff import HandoffCoordinator
 from call.media import MediaRouter
 from call.session import ActiveCall
+from obs import tracing as obs
+from obs.turn_trace import TurnTrace
 from runtime.executor import async_process_turn
 from runtime.session import SessionState
 
@@ -37,6 +39,22 @@ logger = logging.getLogger(__name__)
 _FALLBACK_ERROR_MESSAGE = (
     "Dạ hệ thống đang gặp sự cố kỹ thuật, xin quý khách vui lòng gọi lại sau ít phút ạ."
 )
+
+def _render_step_text(step: dict, slots: dict[str, str]) -> str:
+    """Flatten a step's beats into the sentence the caller actually hears,
+    with {{slot}} substituted — the trace should show the spoken text, not
+    the template."""
+    variants = step.get("variants") or []
+    beats = variants[0].get("beats", []) if variants else []
+    out: list[str] = []
+    for beat in beats:
+        text = beat.get("text", "")
+        for key, value in slots.items():
+            text = text.replace("{{" + key + "}}", str(value))
+        if text.strip():
+            out.append(text.strip())
+    return " ".join(out)
+
 
 _QUESTION_RE = re.compile(
     r"\?$"
@@ -77,6 +95,11 @@ class TurnOrchestrator:
         self.state: SessionState | None = None
         self.turn = 0
         self.tts_active = False
+        # Set by MediaRouter on each final transcript; read when the turn's
+        # trace is opened, since process_utterance only receives the text.
+        self.last_stt_confidence: float | None = None
+        # Last RAG SearchResult of the current turn, folded into its trace.
+        self._last_rag: Any = None
         self.tts_interrupt = asyncio.Event()
         self.call_ended = asyncio.Event()
 
@@ -93,7 +116,12 @@ class TurnOrchestrator:
 
     # ── inbound feeds (called by ws.py event loop / MediaRouter) ──────────
 
-    async def on_transcript(self, text: str, stt_emotion: str | None) -> None:
+    async def on_transcript(
+        self, text: str, stt_emotion: str | None, confidence: float | None = None
+    ) -> None:
+        # Confidence rides alongside rather than through the queue so the
+        # existing (text, emotion) contract with MediaRouter is unchanged.
+        self.last_stt_confidence = confidence
         await self.transcript_queue.put((text, stt_emotion))
 
     async def on_answer(self, question_id: str, answer: str) -> None:
@@ -143,7 +171,7 @@ class TurnOrchestrator:
 
             try:
                 text, stt_emotion = await asyncio.wait_for(self.transcript_queue.get(), timeout=0.5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
             t0 = time.perf_counter()
@@ -192,6 +220,16 @@ class TurnOrchestrator:
         self.tts_interrupt.clear()
         self.turn += 1
 
+        # Glassbox: opened here so every decision below can record into it,
+        # closed at the end of the turn (see _finish_trace).
+        trace = TurnTrace(
+            turn=self.turn,
+            session_id=self.ctx.session_id,
+            stt_text=utterance,
+            stt_confidence=self.last_stt_confidence,
+            stt_engine=self.ctx.stt_engine_name,
+        )
+
         cur_step = self.ctx.steps.get(self.state.current_step_id, {})
         fillers_disabled = self.ctx.script.get("disable_fillers", False)
         step_filler_ctx: str = cur_step.get("on_receive", {}).get("filler_context", "thinking")
@@ -211,7 +249,19 @@ class TurnOrchestrator:
             )
         )
         step_from = self.state.current_step_id
-        result = await async_process_turn(self.state, self.ctx.script, utterance, self.nlu)
+        with obs.span("nlu", **{"turn": self.turn}) as nlu_span:
+            _t_nlu = time.perf_counter()
+            result = await async_process_turn(self.state, self.ctx.script, utterance, self.nlu)
+            trace.nlu_ms = round((time.perf_counter() - _t_nlu) * 1000, 1)
+            trace.nlu_intent = result.intent
+            trace.nlu_confidence = result.nlu_confidence
+            trace.nlu_tier = result.nlu_tier
+            # ~2s cloud round-trip vs a few ms locally — the gap is large
+            # enough that "did the LLM run?" is the number worth watching.
+            trace.nlu_llm_used = trace.nlu_ms > 500
+            obs.set_attr(nlu_span, "nlu.intent", result.intent or "")
+            obs.set_attr(nlu_span, "nlu.tier", result.nlu_tier)
+            obs.set_attr(nlu_span, "nlu.confidence", result.nlu_confidence)
         self.state = result.state
 
         await filler_task
@@ -251,21 +301,13 @@ class TurnOrchestrator:
 
         await self._stream_step(step, dict(self.state.slots), no_match, t_start)
 
-        # Sent AFTER beats so the UI simulator can display alongside audio.
-        try:
-            await self.egress.send({
-                "event": "turn_meta",
-                "turn": self.turn,
-                "intent": result.intent,
-                "slots_new": result.slots,
-                "step_from": step_from,
-                "step_to": step.get("id", self.state.current_step_id),
-                "nlu_confidence": result.nlu_confidence,
-                "nlu_tier": result.nlu_tier,
-                "filler": result.suggested_filler,
-            })
-        except Exception:
-            pass
+        trace.step_from = step_from
+        trace.step_to = step.get("id", self.state.current_step_id)
+        trace.slots_new = dict(result.slots)
+        trace.agent_text = _render_step_text(step, dict(self.state.slots))
+        trace.tts_engine = self.ctx.tts_engine_name
+        trace.escalated = result.is_handoff
+        await self._finish_trace(trace, t_start)
 
         landed_type = step.get("type", "")
         if landed_type in ("speak", "hangup"):
@@ -286,6 +328,30 @@ class TurnOrchestrator:
             on_tts_start=self.media.on_tts_start,
             on_tts_end=self.media.on_tts_end,
         )
+
+    async def _finish_trace(self, trace: TurnTrace, t_start: float) -> None:
+        """Close the turn's decision record and fan it out: span attributes,
+        a live WS event, and the in-memory list persisted on hangup.
+
+        Wrapped so a telemetry problem can never end a call — a failure here
+        means a missing trace, not a dropped turn.
+        """
+        try:
+            if self._last_rag is not None:
+                trace.rag_hit = True
+                trace.rag_score = round(float(self._last_rag.score), 3)
+                trace.rag_article_id = str(self._last_rag.article.id)
+                trace.rag_article_title = getattr(self._last_rag.article, "title", None)
+                self._last_rag = None
+            trace.total_ms = round((time.perf_counter() - t_start) * 1000, 1)
+            trace.trace_id = self.ctx.trace_id
+            trace.apply_to_span(obs.current_span())
+            self.ctx.turn_traces.append(trace.to_dict())
+            # Sent AFTER the beats so a live viewer lines the trace up with
+            # the audio the caller is hearing.
+            await self.egress.send({"event": "turn_trace", **trace.to_dict()})
+        except Exception:
+            logger.debug("turn trace emit failed", exc_info=True)
 
     async def _fsm_rag_intercept(self, utterance: str, t_start: float) -> bool:
         """Try RAG for mid-FSM questions. True = RAG answered (caller should
@@ -312,6 +378,7 @@ class TurnOrchestrator:
                 logger.info("[MEDIUM] FSM domain mismatch — silent")
                 return False  # not handled, let FSM continue
 
+        self._last_rag = result
         logger.info("FSM RAG intercept: score=%.3f article=%s", result.score, result.article.id)
         await self.egress.say(
             result.answer, self.turn, t_start,

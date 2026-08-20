@@ -37,7 +37,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-OnTranscript = Callable[[str, str | None], Awaitable[None]]
+# (text, emotion, stt_confidence) — confidence feeds the per-turn glassbox
+# trace, see obs/turn_trace.py.
+OnTranscript = Callable[[str, str | None, float | None], Awaitable[None]]
 OnPipelineFailure = Callable[[], Awaitable[None]]
 TurnIdProvider = Callable[[], str]
 
@@ -58,7 +60,7 @@ class MediaRouter:
     def __init__(
         self,
         session_id: str,
-        egress: "EgressSender | None" = None,
+        egress: EgressSender | None = None,
         use_silero_vad: bool = False,
     ) -> None:
         self.session_id = session_id
@@ -109,7 +111,7 @@ class MediaRouter:
             try:
                 async for result in p.process():
                     if result.text:
-                        await on_transcript(result.text, result.emotion)
+                        await on_transcript(result.text, result.emotion, result.confidence)
                         logger.info(
                             "STT transcript: %r (conf=%.2f, emotion=%s)",
                             result.text, result.confidence, result.emotion,
@@ -147,7 +149,7 @@ class MediaRouter:
 
         async def on_final(turn_id: str, text: str, confidence: float) -> None:
             if text:
-                await on_transcript(text, None)
+                await on_transcript(text, None, confidence)
                 logger.info(
                     "streaming STT final: %r (turn_id=%s conf=%.2f)", text, turn_id, confidence,
                 )
@@ -246,7 +248,7 @@ class MediaRouter:
             try:
                 async for result in p.process():
                     if result.text:
-                        await on_transcript(result.text, result.emotion)
+                        await on_transcript(result.text, result.emotion, result.confidence)
                         logger.info(
                             "STT transcript (HTTP fallback): %r (conf=%.2f, emotion=%s)",
                             result.text, result.confidence, result.emotion,

@@ -160,6 +160,9 @@ def _build_llm_client():  # type: ignore[return]
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[type-arg]
+    from obs.tracing import init_tracing  # noqa: PLC0415
+    init_tracing("voice-worker")
+
     remote_config = RemoteConfig(settings)
     system_config: SystemConfig = await remote_config.load()
 

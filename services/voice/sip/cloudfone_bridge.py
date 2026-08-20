@@ -25,6 +25,7 @@ import numpy as np
 import websockets
 
 from audio.codec import pcm_to_ulaw
+from obs.tracing import new_traceparent
 from sip.client import SipCall
 
 logger = logging.getLogger(__name__)
@@ -39,11 +40,18 @@ async def bridge_call(
     """Run for the lifetime of one call. Returns when the worker ends the
     call (hangup/handoff) or the WS/SIP side closes."""
     session_id = str(uuid.uuid4())
+    # Minted here, at the moment the call is answered, so one trace id spans
+    # the whole call across every hop: softphone → voice worker → NestJS →
+    # the call_sessions row → the trace in Grafana/Tempo.
+    traceparent = new_traceparent()
+    trace_id = traceparent.split("-")[1]
+    logger.info("Call trace: session=%s trace_id=%s", session_id, trace_id)
 
     async with websockets.connect(ws_url, max_size=None) as ws:
         await ws.send(json.dumps({
             "event": "start",
             "session_id": session_id,
+            "traceparent": traceparent,
             "campaign_id": campaign_id or script.get("campaign_id"),
             "script_version_id": script.get("id"),
             "direction": "inbound",

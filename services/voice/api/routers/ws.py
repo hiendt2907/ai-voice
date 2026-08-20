@@ -24,13 +24,20 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from api.config import Settings
 from call.dialogue import DialogueEngine
 from call.egress import EgressSender
-from call.events import CallContext, InboundEvent, QuestionAnsweredMessage, StartMessage, UtteranceMessage
+from call.events import (
+    CallContext,
+    InboundEvent,
+    QuestionAnsweredMessage,
+    StartMessage,
+    UtteranceMessage,
+)
 from call.media import MediaRouter
 from call.session import default_session_manager
 from call.turn import TurnOrchestrator
 from llm.client import LLMClient
 from llm.conversation import ConversationEngine
 from llm.nlu import LLMNLUClassifier
+from obs import tracing as obs
 from runtime.executor import create_session
 from telephony import TelephonyAdapter, get_adapter
 from tts.chain import TTSChain, build_tts_chain
@@ -141,6 +148,8 @@ async def _post_call_events(ctx: CallContext, turn_orch: TurnOrchestrator, start
         "durationSeconds": round(time.time() - started_at),
         "startedAt": datetime.fromtimestamp(started_at).isoformat(),
         "endedAt": datetime.now().isoformat(),
+        "traceId": ctx.trace_id,
+        "turnTraces": ctx.turn_traces,
         "meta": {
             "bargeInCount": ctx.barge_in_count,
             "noMatchCounts": dict(state.no_match_counts),
@@ -235,6 +244,7 @@ async def call_ws(
 
     pipeline_task = None
     redis_sub_task = None
+    call_span_cm = None
     turn_task = asyncio.create_task(turn_orch.turn_handler())
 
     try:
@@ -285,6 +295,28 @@ async def call_ws(
                 ctx.interception_mode = raw.get("interception_mode", "full")
                 ctx.interception_domains = raw.get("interception_domains", [])
                 ctx.started_at = started_at = time.time()
+
+                # Root span for the whole call. Parented to the traceparent
+                # the SIP bridge minted at answer time, so softphone and
+                # worker share one trace id rather than opening two traces.
+                _tp = raw.get("traceparent", "")
+                call_span_cm = obs.span(
+                    "call",
+                    parent=obs.context_from_traceparent(_tp),
+                    **{
+                        "session_id": ctx.session_id,
+                        "campaign_id": ctx.campaign_id or "",
+                        "direction": ctx.caller_direction,
+                    },
+                )
+                call_span_cm.__enter__()
+                ctx.trace_id = obs.current_trace_id() or (_tp.split("-")[1] if _tp else "")
+                _stt_engine = getattr(ws.app.state, "stt", None)
+                ctx.stt_engine_name = type(_stt_engine).__name__ if _stt_engine else ""
+                ctx.tts_engine_name = (
+                    dialogue.tts_chain.primary_engine_name() if dialogue.tts_chain else "beat-only"
+                )
+                logger.info("Call trace_id=%s session=%s", ctx.trace_id, ctx.session_id)
 
                 media.session_id = ctx.session_id
                 active_call = default_session_manager.register(ctx.session_id)
@@ -355,6 +387,15 @@ async def call_ws(
         turn_orch.call_ended.set()
 
         await _post_call_events(ctx, turn_orch, started_at)
+
+        # Close the call root span so Tempo gets a complete trace. Must run
+        # after _post_call_events so the persisted trace id matches the span
+        # that actually gets exported.
+        if call_span_cm is not None:
+            try:
+                call_span_cm.__exit__(None, None, None)
+            except Exception:
+                logger.debug("call span close failed", exc_info=True)
 
         media.stop()
         if pipeline_task is not None:

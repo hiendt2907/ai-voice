@@ -140,7 +140,7 @@ def test_stop_delegates_to_pipeline():
 async def test_start_returns_none_when_no_stt_configured():
     router = MediaRouter(session_id="s1")
 
-    async def _on_transcript(text: str, emotion: str | None) -> None:
+    async def _on_transcript(text: str, emotion: str | None, confidence: float | None = None) -> None:
         pass
 
     async def _on_failure() -> None:
@@ -206,7 +206,7 @@ async def test_start_detects_streaming_stt_instance():
     router = MediaRouter(session_id="s1")
     fake_stt = _FakeStreamingSTT(block_forever=True)
 
-    async def _on_transcript(text, emotion):
+    async def _on_transcript(text, emotion, confidence=None):
         pass
 
     async def _on_failure():
@@ -227,7 +227,7 @@ async def test_streaming_final_transcript_reaches_on_transcript_and_closes():
     fake_stt = _FakeStreamingSTT(final_text="chào bác sĩ")
     received: list[tuple[str, str | None]] = []
 
-    async def _on_transcript(text, emotion):
+    async def _on_transcript(text, emotion, confidence=None):
         received.append((text, emotion))
 
     async def _on_failure():
@@ -249,7 +249,7 @@ async def test_streaming_connect_failure_degrades_to_http_never_hangs_up():
     fake_stt = _FakeStreamingSTT(fail_connect=True)
     hangup = asyncio.Event()
 
-    async def _on_transcript(text, emotion):
+    async def _on_transcript(text, emotion, confidence=None):
         pass
 
     async def _on_failure():
@@ -273,7 +273,7 @@ async def test_streaming_listen_disconnect_degrades_to_http_never_hangs_up():
     fake_stt = _FakeStreamingSTT(fail_listen=True, final_text=None)
     hangup = asyncio.Event()
 
-    async def _on_transcript(text, emotion):
+    async def _on_transcript(text, emotion, confidence=None):
         pass
 
     async def _on_failure():
@@ -296,7 +296,7 @@ async def test_streaming_degrade_continues_serving_audio_via_http_pipeline():
     router = MediaRouter(session_id="s1")
     fake_stt = _FakeStreamingSTT(fail_listen=True, final_text=None)
 
-    async def _on_transcript(text, emotion):
+    async def _on_transcript(text, emotion, confidence=None):
         pass
 
     async def _on_failure():
@@ -322,7 +322,7 @@ async def test_streaming_pipeline_failure_after_degrade_still_hangs_up():
     fake_stt = _FakeStreamingSTT(fail_listen=True, final_text=None)
     hangup = asyncio.Event()
 
-    async def _on_transcript(text, emotion):
+    async def _on_transcript(text, emotion, confidence=None):
         pass
 
     async def _on_failure():
@@ -361,7 +361,7 @@ async def test_feed_streaming_send_loop_opens_turn_and_forwards_audio():
     router = MediaRouter(session_id="s1")
     fake_stt = _FakeStreamingSTT(final_text=None, block_forever=True)
 
-    async def _on_transcript(text, emotion):
+    async def _on_transcript(text, emotion, confidence=None):
         pass
 
     async def _on_failure():
@@ -386,7 +386,7 @@ async def test_feed_streaming_preroll_flushed_when_turn_opens():
     router = MediaRouter(session_id="s1")
     fake_stt = _FakeStreamingSTT(final_text=None, block_forever=True)
 
-    async def _on_transcript(text, emotion):
+    async def _on_transcript(text, emotion, confidence=None):
         pass
 
     async def _on_failure():
@@ -417,7 +417,7 @@ async def test_feed_streaming_preroll_buffer_is_bounded():
     router = MediaRouter(session_id="s1")
     fake_stt = _FakeStreamingSTT(final_text=None, block_forever=True)
 
-    async def _on_transcript(text, emotion):
+    async def _on_transcript(text, emotion, confidence=None):
         pass
 
     async def _on_failure():
@@ -542,7 +542,7 @@ async def test_real_audio_barge_in_triggers_flush_through_egress():
     egress = _FakeEgress()
     router = MediaRouter(session_id="s1", egress=egress)  # type: ignore[arg-type]
 
-    async def _on_transcript(text: str, emotion: str | None) -> None:
+    async def _on_transcript(text: str, emotion: str | None, confidence: float | None = None) -> None:
         pass
 
     async def _on_pipeline_failure() -> None:

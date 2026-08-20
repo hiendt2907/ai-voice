@@ -68,6 +68,16 @@ class CallContext:
     last_rag_score: float | None = None
     barge_in_count: int = 0
 
+    # Glassbox: one decision record per caller turn. Emitted live over the
+    # call WebSocket, exported as OTel spans, and persisted into
+    # call_turns.metadata on hangup — see obs/turn_trace.py.
+    trace_id: str = ""
+    turn_traces: list[Any] = field(default_factory=list)
+    # Engine names are recorded per turn so a trace shows which engine
+    # actually served it — TTSChain falls back between engines mid-call.
+    stt_engine_name: str = ""
+    tts_engine_name: str = ""
+
     def script_exec_mode(self) -> str:
         """Explicit field takes priority, then infer from legacy `type`."""
         explicit = self.script.get("execution_mode")
