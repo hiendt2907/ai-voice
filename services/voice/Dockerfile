@@ -10,9 +10,10 @@ RUN curl -sL https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-stat
       -o /tmp/ffmpeg.tar.xz \
     && tar -xf /tmp/ffmpeg.tar.xz -C /tmp \
     && mv /tmp/ffmpeg-*-amd64-static/ffmpeg /usr/local/bin/ffmpeg \
+    && mv /tmp/ffmpeg-*-amd64-static/ffprobe /usr/local/bin/ffprobe \
     && rm -rf /tmp/ffmpeg.tar.xz /tmp/ffmpeg-*-amd64-static \
     && apt-get purge -y xz-utils \
-    && chmod +x /usr/local/bin/ffmpeg
+    && chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe
 COPY --from=ghcr.io/astral-sh/uv:0.5 /uv /uvx /usr/local/bin/
 
 WORKDIR /app
