@@ -5,5 +5,7 @@ __pycache__
 .coverage
 tests
 .env
-# Local AI model weights (Piper ONNX etc.) — only needed by the inference server
-models/
+# Local AI model weights (Piper ONNX etc.) — only needed by the inference
+# server. Anchored to the top level only — stt/models/ (Silero VAD, a tiny
+# vendored asset the GCP worker image DOES need) must not match this.
+/models/
