@@ -87,10 +87,6 @@ class EgressSender:
         duration_s = len(pcm_bytes) / (_PLAYBACK_SAMPLE_RATE * _PLAYBACK_BYTES_PER_SAMPLE)
         now = time.monotonic()
         self._playback_deadline = max(now, self._playback_deadline) + duration_s
-        logger.info(
-            "DEBUG_PLAYBACK turn=%s bytes=%d duration_ms=%.1f deadline_in_ms=%.1f",
-            turn, len(pcm_bytes), duration_s * 1000, (self._playback_deadline - now) * 1000,
-        )
 
     async def say(
         self,

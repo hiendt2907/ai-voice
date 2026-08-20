@@ -275,12 +275,6 @@ class MediaRouter:
             is_speech = self._streaming_vad.is_speech(pcm)
             if self._streaming_queue is not None:
                 self._streaming_queue.put_nowait((pcm, is_speech))
-            if is_speech or self._streaming_vad.speech_active:
-                logger.info(
-                    "DEBUG_VAD is_speech=%s speech_active=%s half_duplex_suppressed=%s tts_active_in=%s",
-                    is_speech, self._streaming_vad.speech_active,
-                    self._streaming_vad.is_half_duplex_suppressed, tts_active,
-                )
             # Phase 5.1: speech_active is False during half-duplex suppression
             return tts_active and self._streaming_vad.speech_active
 
