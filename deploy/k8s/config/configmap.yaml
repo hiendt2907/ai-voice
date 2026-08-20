@@ -29,6 +29,13 @@ data:
   STT_ENGINE: "remote"
   TTS_ENGINE: "remote"
   USE_REAL_TTS: "true"
+  # Canary (2026-08-20): streaming STT validated round 1-4, see memory
+  # phase2-streaming-stt-not-ready — latency ≥ one-shot, crash not
+  # reproducible on stable env, fallback-while-WS-down confirmed with real
+  # audio. GCP is the only pre-production env (no live CloudFone traffic
+  # yet), so enabling here IS the canary. Watch pod logs for "degrading to
+  # HTTP" and error rate; flip back to "false" immediately on regression.
+  USE_STREAMING_STT: "true"
   ELEVENLABS_VOICE_ID: "d5HVupAWCwe4e6GvMCAL"
   ELEVENLABS_MODEL_ID: "eleven_v3"
 
