@@ -28,6 +28,12 @@ spec:
                 name: ai-voice-config
             - secretRef:
                 name: ai-voice-secrets
+            - secretRef:
+                # Standalone secret (NOT Vault/ExternalSecret-managed like
+                # ai-voice-secrets above — created directly via kubectl,
+                # edited via Lens). Holds XKIRO_API_KEY for the xKiro TTS
+                # evaluation adapter (tts/xkiro_tts.py).
+                name: ai-voice-xkiro
           readinessProbe:
             httpGet:
               path: /health

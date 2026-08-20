@@ -25,6 +25,10 @@ dependencies = [
     "onnxruntime>=1.17.0",
     "edge-tts>=7.2.8",
     "sounddevice>=0.5.5",
+    # MP3→PCM decode for edge-tts and xKiro TTS output (needs ffmpeg on PATH).
+    # Previously only a transitive dep (via gradio, local-inference extra);
+    # declared explicitly since tts/edge_tts.py and tts/xkiro_tts.py import it directly.
+    "pydub>=0.25.1",
 ]
 
 [project.optional-dependencies]

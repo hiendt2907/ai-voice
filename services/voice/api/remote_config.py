@@ -47,6 +47,10 @@ class TtsConfig:
     elevenlabs_style: float = 0.0
     elevenlabs_use_speaker_boost: bool = True
     elevenlabs_speed: float = 1.0
+    xkiro_api_key: str = ""
+    xkiro_tts_url: str = "https://api.xkiro.com/v1/audio/speech"
+    xkiro_voice: str = "gentle-female-vietnamese"
+    xkiro_model: str = "xkiro-voice"
     fallback_order: list[str] = None  # type: ignore[assignment]
     daily_char_quota: int = 0
     circuit_breaker_failures: int = 3
@@ -137,6 +141,10 @@ def _parse(raw: dict) -> SystemConfig:  # type: ignore[type-arg]
             elevenlabs_style=float(tts_raw.get("elevenlabsStyleExaggeration") or 0.0),
             elevenlabs_use_speaker_boost=bool(tts_raw.get("elevenlabsUseSpeakerBoost", True)),
             elevenlabs_speed=float(tts_raw.get("elevenlabsSpeed") or 1.0),
+            xkiro_api_key=tts_raw.get("xkiroApiKey") or "",
+            xkiro_tts_url=tts_raw.get("xkiroTtsUrl") or "https://api.xkiro.com/v1/audio/speech",
+            xkiro_voice=tts_raw.get("xkiroVoice") or "gentle-female-vietnamese",
+            xkiro_model=tts_raw.get("xkiroModel") or "xkiro-voice",
             fallback_order=tts_raw.get("engineFallbackOrder") or ["edge-tts", "elevenlabs"],
             daily_char_quota=int(tts_raw.get("elevenlabsDailyCharQuota") or 0),
             circuit_breaker_failures=int(tts_raw.get("circuitBreakerFailures") or 3),
@@ -199,6 +207,10 @@ def _fallback(settings: Settings) -> SystemConfig:
             elevenlabs_style=settings.elevenlabs_style,
             elevenlabs_use_speaker_boost=settings.elevenlabs_use_speaker_boost,
             elevenlabs_speed=settings.elevenlabs_speed,
+            xkiro_api_key=settings.xkiro_api_key,
+            xkiro_tts_url=settings.xkiro_tts_url,
+            xkiro_voice=settings.xkiro_voice,
+            xkiro_model=settings.xkiro_model,
         ),
         notify=NotifyConfig(
             platform=settings.notify_platform,

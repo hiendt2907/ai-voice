@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     tts_model_id: str = "g-group-ai-lab/gwen-tts-0.6B"
     tts_device: str = "cpu"
     tts_ref_audio: str = ""   # resolved at runtime from samples/ if empty
+    # xKiro TTS (cloud, evaluation — see tts/xkiro_tts.py)
+    xkiro_api_key: str = ""
+    xkiro_tts_url: str = "https://api.xkiro.com/v1/audio/speech"
+    xkiro_voice: str = "gentle-female-vietnamese"
+    xkiro_model: str = "xkiro-voice"
 
     # Notify (unknown questions → Teams/Telegram)
     notify_platform: str = "telegram"   # "teams" | "telegram"

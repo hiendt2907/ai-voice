@@ -191,6 +191,7 @@ def build_tts_chain(
     """Factory: build TTSChain from config. Called per-session."""
     from tts.edge_tts import EdgeTTS  # noqa: PLC0415
     from tts.elevenlabs_tts import ElevenLabsTTS  # noqa: PLC0415
+    from tts.xkiro_tts import XkiroTTS  # noqa: PLC0415
 
     # If engine is explicitly chosen, ensure it appears first in the order.
     raw_order = tts_cfg.fallback_order or ["edge-tts", "elevenlabs"]
@@ -220,6 +221,14 @@ def build_tts_chain(
 
     edge = EdgeTTS(voice=tts_cfg.voice)
     engine_map["edge-tts"] = edge
+
+    if tts_cfg.xkiro_api_key:
+        engine_map["xkiro"] = XkiroTTS(
+            api_key=tts_cfg.xkiro_api_key,
+            voice=tts_cfg.xkiro_voice,
+            tts_url=tts_cfg.xkiro_tts_url,
+            model=tts_cfg.xkiro_model,
+        )
 
     # Remote inference server (heavy models run off-box) — needs httpx only.
     try:
