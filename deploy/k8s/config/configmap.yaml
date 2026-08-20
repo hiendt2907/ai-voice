@@ -36,6 +36,13 @@ data:
   # yet), so enabling here IS the canary. Watch pod logs for "degrading to
   # HTTP" and error rate; flip back to "false" immediately on regression.
   USE_STREAMING_STT: "true"
+  # Canary (2026-08-20): Silero VAD (stt/silero_vad.py, onnxruntime-only)
+  # replacing bare RMS energy — validated with real recorded speech
+  # (pytest, silence ~0.02 vs speech ~0.9-1.0 probability) and confirmed
+  # the GCP image boots clean with it enabled. Same rollout posture as
+  # USE_STREAMING_STT above — watch for VAD-driven regressions (missed
+  # end-of-utterance, barge-in not firing) and flip back on any sign of one.
+  USE_SILERO_VAD: "true"
   ELEVENLABS_VOICE_ID: "d5HVupAWCwe4e6GvMCAL"
   ELEVENLABS_MODEL_ID: "eleven_v3"
 
