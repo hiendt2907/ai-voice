@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import json
 import struct
 import time
@@ -64,11 +65,21 @@ class TurnRecord:
 
 
 @dataclass
+class SimEvent:
+    t_ms: float
+    event: str
+    turn: int | None = None
+    step_id: str = ""
+    bytes: int | None = None
+
+
+@dataclass
 class SimResult:
     session_id: str
     end_reason: str  # "hangup" | "handoff" | "disconnect" | "utterances_exhausted"
     end_step_id: str = ""
     turns: list[TurnRecord] = field(default_factory=list)
+    events: list[SimEvent] = field(default_factory=list)
 
     @property
     def agent_turns(self) -> list[TurnRecord]:
@@ -77,6 +88,27 @@ class SimResult:
     @property
     def user_turns(self) -> list[TurnRecord]:
         return [t for t in self.turns if t.role == "user"]
+
+    def to_json_dict(self) -> dict[str, Any]:
+        return {
+            "session_id": self.session_id,
+            "end_reason": self.end_reason,
+            "end_step_id": self.end_step_id,
+            "turns": [
+                {
+                    "turn": t.turn, "role": t.role, "text": t.text,
+                    "step_id": t.step_id, "ttfa_ms": t.ttfa_ms,
+                }
+                for t in self.turns
+            ],
+            "events": [
+                {
+                    "t_ms": e.t_ms, "event": e.event, "turn": e.turn,
+                    "step_id": e.step_id, "bytes": e.bytes,
+                }
+                for e in self.events
+            ],
+        }
 
 
 class CallSimulator:
@@ -199,16 +231,32 @@ class CallSimulator:
         wav_path: str | Path,
         session_id: str | None = None,
         frame_ms: int = 20,
+        barge_in_at_ms: float | None = None,
+        barge_in_wav_path: str | Path | None = None,
     ) -> SimResult:
         """Run simulator in real audio mode — reads WAV, sends audio_frame events.
 
         The WAV file must be mono PCM (any sample rate; resampled to 8kHz if needed).
-        Frames are sent at real-time pace (frame_ms interval).
+        Frames are sent at real-time pace (frame_ms interval), on a task
+        running CONCURRENTLY with a recv loop — every server event (BEAT,
+        AUDIO_CHUNK, flush, ...) is captured with a timestamp in
+        `SimResult.events`, not polled-and-discarded between sends.
+
+        If `barge_in_at_ms` + `barge_in_wav_path` are given, the caller WAV
+        is swapped for the barge-in WAV that many ms after the agent's first
+        AUDIO_CHUNK for this turn — simulating the caller interrupting the
+        agent mid-reply — instead of playing linearly through one WAV.
         """
         sid = session_id or str(uuid.uuid4())
         turns: list[TurnRecord] = []
+        events: list[SimEvent] = []
 
         audio_frames = _load_wav_as_ulaw_frames(wav_path, frame_ms=frame_ms)
+        barge_in_frames = (
+            _load_wav_as_ulaw_frames(barge_in_wav_path, frame_ms=frame_ms)
+            if barge_in_wav_path is not None
+            else None
+        )
 
         if self.verbose:
             print(f"\n{_BOLD}{'─' * 60}{_RESET}")
@@ -218,7 +266,15 @@ class CallSimulator:
             print(f"  Server  : {_DIM}{self.ws_url}{_RESET}")
             print(f"  WAV     : {_DIM}{wav_path}{_RESET}")
             print(f"  Frames  : {_DIM}{len(audio_frames)} × {frame_ms}ms{_RESET}")
+            if barge_in_frames is not None:
+                print(
+                    f"  Barge-in: {_DIM}{barge_in_wav_path} at +{barge_in_at_ms:.0f}ms "
+                    f"after first agent audio{_RESET}"
+                )
             print(f"{_BOLD}{'─' * 60}{_RESET}\n")
+
+        end_event: str | None = None
+        end_step = ""
 
         try:
             async with websockets.connect(self.ws_url) as ws:
@@ -236,56 +292,141 @@ class CallSimulator:
                 t_sent = time.perf_counter()
                 await ws.send(json.dumps(start_msg))
 
-                # 2. Collect greeting
+                # 2. Collect greeting (no overlap needed — nothing to barge
+                # into yet on the very first turn)
                 beats, end_event, end_step = await self._collect_response(ws, t_sent)
                 turns.append(self._record_agent_turn(0, beats))
                 if end_event:
-                    result = SimResult(sid, end_event, end_step, turns)
+                    result = SimResult(sid, end_event, end_step, turns, events)
                     if self.verbose:
                         self._print_summary(result)
                     return result
 
-                # 3. Stream audio frames
-                for i, frame_b64 in enumerate(audio_frames):
-                    await asyncio.sleep(frame_ms / 1000.0)
-                    frame_msg = {
-                        "event": InboundEvent.AUDIO_FRAME,
-                        "data": frame_b64,
-                        "seq": i,
-                    }
-                    await ws.send(json.dumps(frame_msg))
+                # 3. Concurrent recv loop — runs for the rest of the call,
+                # records every event with a timestamp, never blocks sending.
+                t0 = time.perf_counter()
+                stop = asyncio.Event()
+                first_agent_audio_t_ms: float | None = None
+                last_activity_t = t0  # updated on every server event; drives the quiet-timeout below
 
-                    # Check for any completed agent response (non-blocking)
-                    try:
-                        raw = await asyncio.wait_for(ws.recv(), timeout=0.01)
+                async def _recv_loop() -> None:
+                    nonlocal end_event, end_step, first_agent_audio_t_ms, last_activity_t
+                    while not stop.is_set():
+                        try:
+                            raw = await asyncio.wait_for(ws.recv(), timeout=0.05)
+                        except asyncio.TimeoutError:
+                            continue
+                        except websockets.exceptions.ConnectionClosed:
+                            stop.set()
+                            return
                         msg: dict[str, Any] = json.loads(raw)
-                        if msg.get("event") in (OutboundEvent.HANGUP, OutboundEvent.HANDOFF):
-                            end_event = msg["event"]
+                        event = msg.get("event", "")
+                        last_activity_t = time.perf_counter()
+                        t_ms = round((last_activity_t - t0) * 1000, 1)
+                        data_len = len(msg["data"]) if "data" in msg else None
+                        events.append(SimEvent(t_ms, event, msg.get("turn"), msg.get("step_id", ""), data_len))
+
+                        if event == OutboundEvent.AUDIO_CHUNK and first_agent_audio_t_ms is None:
+                            first_agent_audio_t_ms = t_ms
+                        if event == OutboundEvent.BEAT and self.verbose:
+                            self._print_agent_beat(msg)
+                        if event == "flush" and self.verbose:
+                            print(f"  {_MAGENTA}[FLUSH]{_RESET} turn={msg.get('turn')} t={t_ms:.0f}ms")
+                        if event in (OutboundEvent.HANGUP, OutboundEvent.HANDOFF):
+                            end_event = event
                             end_step = msg.get("step_id", "")
-                            break
+                            stop.set()
+                            return
+
+                recv_task = asyncio.create_task(_recv_loop())
+
+                # 4. Send frames — swap to the barge-in WAV once it's due.
+                # A CloudFone-like gateway always has an audio stream, so
+                # once the primary WAV is exhausted we keep sending silence
+                # (not stop sending) — otherwise a barge-in scheduled after
+                # the agent's reply starts would never get a chance to
+                # trigger, since nothing would be arriving at the server to
+                # switch mid-stream.
+                _silence_frame_b64 = base64.b64encode(pcm_to_ulaw(np.zeros(int(8000 * frame_ms / 1000), dtype=np.int16))).decode()
+                _MAX_SEND_S = 30.0  # safety cap so a hung/silent call can't loop forever
+                active_frames: list[str] | None = audio_frames
+                switched = False
+                i = 0
+                seq = 0
+                t_send_start = time.perf_counter()
+                while not stop.is_set() and (time.perf_counter() - t_send_start) < _MAX_SEND_S:
+                    await asyncio.sleep(frame_ms / 1000.0)
+
+                    if (
+                        barge_in_frames is not None
+                        and not switched
+                        and barge_in_at_ms is not None
+                        and first_agent_audio_t_ms is not None
+                        and (time.perf_counter() - t0) * 1000 - first_agent_audio_t_ms >= barge_in_at_ms
+                    ):
+                        active_frames = barge_in_frames
+                        i = 0
+                        switched = True
+                        t_switch_ms = round((time.perf_counter() - t0) * 1000, 1)
+                        events.append(SimEvent(t_switch_ms, "sim_barge_in_audio_start"))
+                        if self.verbose:
+                            print(f"  {_YELLOW}[BARGE-IN AUDIO START]{_RESET} t={t_switch_ms:.0f}ms")
+
+                    if active_frames is not None and i < len(active_frames):
+                        frame_data = active_frames[i]
+                        i += 1
+                        if i >= len(active_frames) and (switched or barge_in_frames is None):
+                            active_frames = None  # exhausted, fall through to silence padding
+                    else:
+                        frame_data = _silence_frame_b64
+
+                    await ws.send(json.dumps({
+                        "event": InboundEvent.AUDIO_FRAME, "data": frame_data, "seq": seq,
+                    }))
+                    seq += 1
+
+                    # Stop padding with silence once the server has gone
+                    # quiet for a while AND (if barge-in was configured)
+                    # we've already delivered it — mirrors run()'s
+                    # quiet-timeout, generous enough to cover STT+NLU+TTS
+                    # latency on the very first reply after the primary WAV.
+                    idle_s = time.perf_counter() - last_activity_t
+                    quiet_deadline_s = self.initial_wait_s if first_agent_audio_t_ms is None else self.quiet_timeout_s
+                    if active_frames is None and (barge_in_at_ms is None or switched) and idle_s > quiet_deadline_s:
+                        break
+
+                # 5. Hangup if the server hasn't already ended the call
+                if not stop.is_set():
+                    await ws.send(json.dumps({"event": InboundEvent.HANGUP}))
+                    try:
+                        await asyncio.wait_for(stop.wait(), timeout=5.0)
                     except asyncio.TimeoutError:
                         pass
 
-                # 4. Hangup
-                if not end_event:
-                    await ws.send(json.dumps({"event": InboundEvent.HANGUP}))
-                    # Collect any final response
-                    beats, end_event, end_step = await self._collect_response(
-                        ws, time.perf_counter()
-                    )
-                    turns.append(self._record_agent_turn(len(turns), beats))
-                    end_event = end_event or "utterances_exhausted"
+                recv_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await recv_task
+
+                turns.append(self._record_agent_turn_from_events(len(turns), events))
+                end_event = end_event or "utterances_exhausted"
 
         except websockets.exceptions.ConnectionClosed:
             end_event = "disconnect"
         except OSError as exc:
             print(f"\n{_RED}Connection failed: {exc}{_RESET}")
-            return SimResult(sid, "connect_error", "", turns)
+            return SimResult(sid, "connect_error", "", turns, events)
 
-        result = SimResult(sid, end_event or "utterances_exhausted", end_step, turns)
+        result = SimResult(sid, end_event or "utterances_exhausted", end_step, turns, events)
         if self.verbose:
             self._print_summary(result)
         return result
+
+    def _record_agent_turn_from_events(self, turn: int, events: list[SimEvent]) -> TurnRecord:
+        """Best-effort TurnRecord built from the recv-loop's SimEvent log —
+        used by run_with_audio, which has no BEAT-dict list like run()'s
+        _collect_response (events there are typed dataclasses, not dicts)."""
+        step_id = next((e.step_id for e in events if e.event == OutboundEvent.BEAT and e.step_id), "")
+        return TurnRecord(turn=turn, role="agent", text="", step_id=step_id)
 
     async def _collect_response(
         self,

@@ -128,6 +128,35 @@ Examples:
         metavar="LABEL",
         help="Inject caller emotion into every utterance (happy/sad/angry/frustrated/fearful/disgusted/surprised)",
     )
+    parser.add_argument(
+        "--wav",
+        default=None,
+        metavar="PATH",
+        help="Path to a WAV file — drives the call with real audio_frame events "
+        "instead of mock text utterances (--utterances is ignored when set)",
+    )
+    parser.add_argument(
+        "--json-out",
+        default=None,
+        metavar="PATH",
+        help="Write the full turn+event timeline as JSON to this path (for "
+        "offline latency/barge-in analysis instead of eyeballing stdout)",
+    )
+    parser.add_argument(
+        "--barge-in-at",
+        type=float,
+        default=None,
+        metavar="MS",
+        help="With --wav + --barge-in-wav: start playing the barge-in WAV "
+        "this many ms after the agent's first audio chunk in the turn",
+    )
+    parser.add_argument(
+        "--barge-in-wav",
+        default=None,
+        metavar="PATH",
+        help="WAV file to play as the caller interrupting the agent mid-reply "
+        "(requires --wav and --barge-in-at)",
+    )
     return parser.parse_args()
 
 
@@ -145,11 +174,24 @@ async def main() -> None:
         emotion=args.emotion,
     )
 
-    await sim.run(
-        script=script,
-        caller_utterances=args.utterances,
-        session_id=args.session_id,
-    )
+    if args.wav:
+        result = await sim.run_with_audio(
+            script=script,
+            wav_path=args.wav,
+            session_id=args.session_id,
+            barge_in_at_ms=args.barge_in_at,
+            barge_in_wav_path=args.barge_in_wav,
+        )
+    else:
+        result = await sim.run(
+            script=script,
+            caller_utterances=args.utterances,
+            session_id=args.session_id,
+        )
+
+    if args.json_out:
+        Path(args.json_out).write_text(json.dumps(result.to_json_dict(), indent=2, ensure_ascii=False))
+        print(f"  JSON written to {args.json_out}")
 
 
 if __name__ == "__main__":

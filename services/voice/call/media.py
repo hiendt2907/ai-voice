@@ -302,6 +302,7 @@ class MediaRouter:
         it for `turn`. No-op if this MediaRouter wasn't given an egress
         (e.g. tests, or a caller that doesn't care about downstream flush)."""
         if self.egress is not None:
+            self.egress.reset_playback()
             await self.egress.send(FlushPayload(turn=turn).to_dict())
 
     def stop(self) -> None:

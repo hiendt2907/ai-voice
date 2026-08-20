@@ -246,7 +246,16 @@ async def call_ws(ws: WebSocket, script_id: str = "", provider: str = "cloudfone
                     break
 
             elif event_name == InboundEvent.AUDIO_FRAME and turn_orch.state is not None:
-                is_barge_in = media.feed(raw.get("data", ""), tts_active=turn_orch.tts_active)
+                # `turn_orch.tts_active` alone flips False as soon as the
+                # server finishes SYNTHESIZING a turn's audio — but fast
+                # engines (Piper) can push several seconds of audio over the
+                # WS in a few hundred ms, so the client is still audibly
+                # PLAYING it well after that. `egress.is_playing` is the
+                # audio-position clock that covers that tail (see
+                # call/egress.py); either signal makes barge-in eligible.
+                is_barge_in = media.feed(
+                    raw.get("data", ""), tts_active=turn_orch.tts_active or egress.is_playing
+                )
                 # Only act once per interruption, not once per audio frame
                 # (an interruption spans many frames while the caller keeps
                 # talking) — `tts_interrupt` being unset is exactly "this is

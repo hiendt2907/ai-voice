@@ -32,6 +32,16 @@ logger = logging.getLogger(__name__)
 
 _TEMPLATE_VAR = re.compile(r"\{\{(\w+)\}\}")
 
+# PCM handed to send_audio is always int16 @ 8kHz (see simulator/
+# call_simulator.py's _PLAYBACK_SR) — used to convert bytes sent into an
+# estimated client-side playback duration for the audio-position clock
+# below (fixes the barge-in "overshoot" gap: TTS is considered active only
+# until synthesis finishes on the server, but Piper/RemoteTTS can push a
+# multi-second reply over the WS in a few hundred ms, so the client is
+# still audibly playing long after the server thinks it's done talking).
+_PLAYBACK_SAMPLE_RATE = 8000
+_PLAYBACK_BYTES_PER_SAMPLE = 2
+
 
 class EgressSender:
     """One instance per call. Wraps `ws` + `adapter` so every other
@@ -41,6 +51,22 @@ class EgressSender:
     def __init__(self, ws: WebSocket, adapter: TelephonyAdapter) -> None:
         self.ws = ws
         self.adapter = adapter
+        # Monotonic timestamp at which all audio handed to send_audio() so
+        # far is expected to finish playing on the client. An audio-position
+        # clock, not a wall-clock flag around synthesis — see module note.
+        self._playback_deadline = 0.0
+
+    @property
+    def is_playing(self) -> bool:
+        """True while the client is still expected to be playing audio we
+        already sent (estimated from bytes sent, not synthesis state)."""
+        return time.monotonic() < self._playback_deadline
+
+    def reset_playback(self) -> None:
+        """Call on barge-in flush: the client just dropped whatever audio it
+        had queued, so estimated playback ends now regardless of how much
+        we'd previously queued for it."""
+        self._playback_deadline = time.monotonic()
 
     async def send(self, payload: dict[str, Any]) -> None:
         """Encode an internal (CloudFone-shaped) event and send it.
@@ -58,6 +84,9 @@ class EgressSender:
     async def send_audio(self, pcm_bytes: bytes, turn: int) -> None:
         chunk = AudioChunkPayload(data=base64.b64encode(pcm_bytes).decode(), turn=turn)
         await self.send(chunk.to_dict())
+        duration_s = len(pcm_bytes) / (_PLAYBACK_SAMPLE_RATE * _PLAYBACK_BYTES_PER_SAMPLE)
+        now = time.monotonic()
+        self._playback_deadline = max(now, self._playback_deadline) + duration_s
 
     async def say(
         self,

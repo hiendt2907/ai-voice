@@ -474,9 +474,13 @@ def test_is_speech_active_delegates_to_streaming_vad_when_present():
 class _FakeEgress:
     def __init__(self) -> None:
         self.sent: list[dict] = []
+        self.playback_reset_count = 0
 
     async def send(self, payload: dict) -> None:
         self.sent.append(payload)
+
+    def reset_playback(self) -> None:
+        self.playback_reset_count += 1
 
 
 @pytest.mark.asyncio
