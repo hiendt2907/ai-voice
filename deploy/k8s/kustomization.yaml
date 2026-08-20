@@ -28,8 +28,8 @@ resources:
 # human always approves the actual rollout.
 images:
   - name: harbor.harbor.svc.cluster.local/ai-voice/api
-    newTag: d238f2d
+    newTag: 6c9d7c4
   - name: harbor.harbor.svc.cluster.local/ai-voice/portal
-    newTag: d238f2d
+    newTag: 6c9d7c4
   - name: harbor.harbor.svc.cluster.local/ai-voice/voice
-    newTag: d238f2d
+    newTag: 6c9d7c4
