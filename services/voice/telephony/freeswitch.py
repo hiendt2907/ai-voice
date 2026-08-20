@@ -24,8 +24,9 @@ CloudFone's `audio_frame`/`audio_chunk` events carry μ-law (the pipeline's
 `ulaw_to_pcm()`s), but mod_audio_fork speaks linear PCM — so this adapter
 converts PCM→μ-law on the way in. Outbound stays linear PCM (matches
 `call/egress.py:EgressSender.send_audio()`'s own 8kHz int16 format
-exactly), just re-wrapped as a `playAudio` JSON message instead of
-CloudFone's `audio_chunk`.
+exactly), wrapped as either a `playAudio` JSON message (default,
+`audio_mode=json`) or a raw binary WS frame (`audio_mode=stream`) — see
+`binary_stream` below.
 """
 
 from __future__ import annotations
@@ -44,6 +45,16 @@ logger = logging.getLogger(__name__)
 
 class FreeSwitchAdapter:
     name = "freeswitch"
+
+    def __init__(self, binary_stream: bool = False) -> None:
+        # bidirectional_audio_stream mode (mod_audio_fork): TTS audio goes
+        # out as raw binary WS frames instead of JSON playAudio. Both modes
+        # drain into the same playoutBuffer/dub_speech_frame mechanism on
+        # the FreeSWITCH side though — see
+        # https://github.com/byteroycai/mod_audio_fork/issues/1 — so this
+        # exists to A/B-test whether that matters, not because it's known
+        # to fix anything.
+        self._binary_stream = binary_stream
 
     def normalize_inbound(self, raw: dict[str, Any]) -> dict[str, Any] | None:
         """The one JSON text frame mod_audio_fork sends is the metadata our
@@ -77,12 +88,14 @@ class FreeSwitchAdapter:
             "data": base64.b64encode(ulaw_bytes).decode(),
         }
 
-    def encode_outbound(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    def encode_outbound(self, payload: dict[str, Any]) -> list[dict[str, Any] | bytes]:
         event = payload.get("event")
         if event == OutboundEvent.AUDIO_CHUNK:
             pcm_b64 = payload.get("data", "")
             if not pcm_b64:
                 return []
+            if self._binary_stream:
+                return [base64.b64decode(pcm_b64)]
             return [{
                 "type": "playAudio",
                 "data": {

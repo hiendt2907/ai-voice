@@ -35,11 +35,13 @@ class TelephonyAdapter(Protocol):
         receive loop only calls it when a binary frame actually arrives."""
         ...
 
-    def encode_outbound(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    def encode_outbound(self, payload: dict[str, Any]) -> list[dict[str, Any] | bytes]:
         """Internal (CloudFone-shaped) event dict → zero or more provider wire messages.
 
         Zero messages is valid when the provider has no equivalent of an event
-        (e.g. Twilio has no text "beat" channel).
+        (e.g. Twilio has no text "beat" channel). A `bytes` item is a raw
+        binary WS frame (audio), for providers whose transport expects that
+        instead of JSON-wrapped base64.
         """
         ...
 

@@ -74,9 +74,16 @@ class EgressSender:
         A provider may translate one internal event into several wire
         messages (e.g. Twilio chunks one audio_chunk into many 20ms `media`
         frames), or into none at all (events it has no equivalent for).
+        `encode_outbound` may also return raw `bytes` items — a provider
+        whose transport expects binary WS frames for audio (e.g. FreeSWITCH's
+        mod_audio_fork in bidirectional *streaming* mode) instead of
+        JSON-wrapped base64.
         """
         for msg in self.adapter.encode_outbound(payload):
-            await self.ws.send_json(msg)
+            if isinstance(msg, bytes):
+                await self.ws.send_bytes(msg)
+            else:
+                await self.ws.send_json(msg)
 
     async def send_beat(self, beat: BeatPayload) -> None:
         await self.send(beat.to_dict())

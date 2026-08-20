@@ -12,9 +12,9 @@ from telephony.cloudfone import CloudFoneAdapter
 from telephony.freeswitch import FreeSwitchAdapter
 
 
-def get_adapter(provider: str, *, settings: Settings) -> TelephonyAdapter:
+def get_adapter(provider: str, *, settings: Settings, audio_mode: str = "json") -> TelephonyAdapter:
     if provider == "cloudfone":
         return CloudFoneAdapter()
     if provider == "freeswitch":
-        return FreeSwitchAdapter()
+        return FreeSwitchAdapter(binary_stream=audio_mode == "stream")
     raise ValueError(f"Unknown telephony provider: {provider!r}")

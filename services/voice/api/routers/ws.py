@@ -160,13 +160,17 @@ async def _post_call_events(ctx: CallContext, turn_orch: TurnOrchestrator, start
 
 
 @router.websocket("/call")
-async def call_ws(ws: WebSocket, script_id: str = "", provider: str = "cloudfone") -> None:
+async def call_ws(
+    ws: WebSocket, script_id: str = "", provider: str = "cloudfone", audio_mode: str = "json"
+) -> None:
     """Streaming call WebSocket. Supports real audio (audio_frame) and mock
     (utterance) modes. `provider` selects the telephony adapter — see
-    `telephony/`."""
+    `telephony/`. `audio_mode` (freeswitch only, for now): "json" (default,
+    JSON playAudio) or "stream" (raw binary frames, mod_audio_fork's
+    bidirectional *streaming* sub-mode — see telephony/freeswitch.py)."""
     await ws.accept()
 
-    adapter: TelephonyAdapter = get_adapter(provider, settings=_settings)
+    adapter: TelephonyAdapter = get_adapter(provider, settings=_settings, audio_mode=audio_mode)
     egress = EgressSender(ws, adapter)
     ctx = CallContext()
     started_at = time.time()
