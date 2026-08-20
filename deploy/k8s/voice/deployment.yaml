@@ -13,10 +13,12 @@ spec:
       labels:
         app: voice
     spec:
+      imagePullSecrets:
+        - name: harbor-ai-voice-pull
       containers:
         - name: voice
-          image: ai-voice/voice:latest
-          imagePullPolicy: Never
+          image: harbor.harbor.svc.cluster.local/ai-voice/voice:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
           envFrom:
