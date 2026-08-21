@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
-import { Repository, Not } from 'typeorm'
+import { Repository, Not, IsNull } from 'typeorm'
 import { Campaign } from './campaign.entity'
 import { ScriptVersion } from './script-version.entity'
 import { VoiceProfile } from './voice-profile.entity'
@@ -135,13 +135,37 @@ export class ScriptsService {
     await this.campaignRepo.delete(id)
   }
 
-  async getRelated(scriptId: string) {
-    await this.getCampaign(scriptId)
-    const [kbArticles, nluDocs] = await Promise.all([
-      this.kbRepo.find({ where: { scriptId }, order: { createdAt: 'DESC' } }),
-      this.nluRepo.find({ where: { scriptId }, order: { createdAt: 'DESC' } }),
-    ])
-    return { kbArticles, nluDocs }
+  /**
+   * "Related" = what the voice worker will actually use for this campaign
+   * at call time — computed live from the exact same rules
+   * services/voice/rag/store.py::_tag_matches and nlu/store.py::search_intents
+   * apply, not a separately-maintained scriptId assignment. Two parallel
+   * mechanisms (a stored FK the Portal checklist counted, vs. the
+   * linkedKbTags/campaignId filters runtime actually evaluates) used to
+   * drift out of sync — a campaign could show "0 KB articles" in Portal
+   * while the AI was still answering from KB via tag matches, or vice
+   * versa. One source of truth now: this mirrors runtime exactly.
+   */
+  async getRelated(campaignId: string) {
+    const campaign = await this.getCampaign(campaignId)
+    const publishedVersion = campaign.versions?.find((v) => v.id === campaign.publishedVersionId)
+    const linkedKbTags: string[] = (publishedVersion?.body as Record<string, unknown>)?.linkedKbTags as string[] ?? []
+
+    const allActiveArticles = await this.kbRepo.find({ where: { isActive: true }, order: { createdAt: 'DESC' } })
+    const kbArticles = linkedKbTags.includes('*')
+      ? allActiveArticles
+      : allActiveArticles.filter((a) => {
+          if (linkedKbTags.length === 0) return false
+          if (a.category && linkedKbTags.includes(a.category)) return true
+          return (a.tags ?? []).some((t) => linkedKbTags.includes(t))
+        })
+
+    const nluDocs = await this.nluRepo.find({
+      where: [{ campaignId, isActive: true }, { campaignId: IsNull(), isActive: true }],
+      order: { createdAt: 'DESC' },
+    })
+
+    return { kbArticles, nluDocs, linkedKbTags }
   }
 
   private async findVersion(campaignId: string, version: string): Promise<ScriptVersion> {
