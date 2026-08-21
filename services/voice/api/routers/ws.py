@@ -387,6 +387,29 @@ async def call_ws(
     finally:
         turn_orch.call_ended.set()
 
+        # turn_handler() runs as its own task, decoupled from this loop via
+        # transcript_queue (so barge-in can interrupt mid-turn) — meaning a
+        # HANGUP or disconnect arriving here does not imply the last queued
+        # utterance has actually finished processing. If it hasn't (still
+        # streaming the farewell TTS, about to set state.status="completed"
+        # on landing on a terminal step), _post_call_events below would read
+        # a stale state and persist a normally-finished call as "error". A
+        # caller hanging up right as the AI's last line starts is the
+        # ordinary way this happens, not an edge case. call_ended is already
+        # set, so turn_handler's own while-loop will exit right after it
+        # finishes whatever it's mid-flight on — just give it a bounded
+        # window to get there before we read `state`.
+        try:
+            await asyncio.wait_for(turn_task, timeout=10.0)
+        except (TimeoutError, asyncio.CancelledError):
+            logger.warning(
+                "turn_handler did not settle within 10s of call end, session=%s — "
+                "posting call-events with whatever state is current",
+                ctx.session_id,
+            )
+        except Exception:
+            logger.exception("turn_handler task raised while draining on call end")
+
         await _post_call_events(ctx, turn_orch, started_at)
 
         # Close the call root span so Tempo gets a complete trace. Must run

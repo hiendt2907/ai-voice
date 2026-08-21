@@ -14,10 +14,22 @@ exception — a "silent zombie call".
 Both are now caught at their task boundary (turn_handler / _drain_pipeline),
 logged with session context, and followed by a spoken Vietnamese fallback
 line + a clean hangup — never a silent hang.
+
+D3 (HANGUP raced turn_handler's in-flight terminal-step status update):
+turn_handler() runs decoupled from the WS receive loop via transcript_queue
+(so barge-in can interrupt mid-turn), so a HANGUP arriving while the last
+utterance is still being processed — e.g. still streaming the farewell TTS,
+about to set state.status="completed" on landing on a terminal step — used
+to reach `_post_call_events` before that update happened, persisting a
+normally-finished call as status="error". Found via a real-conversation test
+(booking flow ending in "goodbye" → farewell) where the transcript was a
+complete, correct booking but the DB row said "error". Fixed by awaiting the
+turn_handler task (bounded) before reading state in the `finally` block.
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import queue
@@ -261,3 +273,86 @@ def test_stt_failure_ends_call_with_fallback_instead_of_silent_zombie(
         and "test-session-d2" in rec.message
         for rec in caplog.records
     ), "expected _drain_pipeline to log the STT failure with session_id context"
+
+
+TERMINAL_SCRIPT = {
+    "id": "test-script",
+    "entry_step": "greeting",
+    "steps": [
+        {
+            "id": "greeting",
+            "type": "speak_listen",
+            "variants": [{"id": "v1", "beats": [{"text": "Xin chào", "pause_after": "turn"}]}],
+            "reprompt_variants": [{"id": "r1", "beats": [{"text": "R1", "pause_after": "turn"}]}],
+            "transitions": [{"when": "intent == 'confirm'", "goto": "farewell"}],
+            "fallback_goto": "farewell",
+            "max_no_match": 2,
+        },
+        {
+            "id": "farewell",
+            "type": "speak",
+            "variants": [{"id": "v1", "beats": [{"text": "Tạm biệt.", "pause_after": "long"}]}],
+        },
+    ],
+    "intents": [{"intent": "confirm", "examples": [{"text": "đúng rồi"}]}],
+}
+
+
+def test_hangup_racing_inflight_turn_does_not_lose_completed_status(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D3: HANGUP arriving while the last utterance is still mid-processing
+    must not make _post_call_events read a stale (pre-transition) state.
+
+    "đúng rồi" is matched via the deterministic affirm-heuristic guided path
+    in nlu.intent_resolver (no embedding model needed, so this stays fast and
+    independent of the real NLU store), landing on the terminal "farewell"
+    step. async_process_turn is wrapped with an artificial delay so the
+    turn is still in flight when HANGUP is sent right behind it — reproducing
+    the race without relying on real-world timing.
+    """
+    real_async_process_turn = turn_module.async_process_turn
+
+    async def _delayed(*args: object, **kwargs: object) -> object:
+        await asyncio.sleep(0.3)
+        return await real_async_process_turn(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(turn_module, "async_process_turn", _delayed)
+
+    posted_status: dict[str, str | None] = {}
+    real_post_call_events = ws_module._post_call_events
+
+    async def _capture_then_post(ctx: object, turn_orch: object, started_at: float) -> None:
+        posted_status["status"] = (
+            turn_orch.state.status if turn_orch.state is not None else None  # type: ignore[attr-defined]
+        )
+        await real_post_call_events(ctx, turn_orch, started_at)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(ws_module, "_post_call_events", _capture_then_post)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/call?provider=cloudfone") as websocket:
+            websocket.send_json({
+                "event": "start",
+                "session_id": "test-session-d3",
+                "script": TERMINAL_SCRIPT,
+            })
+            _receive_json_with_timeout(websocket)  # drain the greeting beat
+
+            websocket.send_json({"event": "utterance", "text": "đúng rồi"})
+            # Sent immediately behind the utterance, before the artificially
+            # delayed turn has any chance to finish — this is the race.
+            websocket.send_json({"event": "hangup"})
+
+            events: list[dict] = []
+            for _ in range(20):
+                msg = _receive_json_with_timeout(websocket, timeout=5.0)
+                events.append(msg)
+                if msg.get("event") == OutboundEvent.HANGUP:
+                    break
+
+    assert posted_status.get("status") == "completed", (
+        f"expected the in-flight turn to finish landing on the terminal step "
+        f"before call-events were posted, got status={posted_status.get('status')!r} "
+        f"events={events}"
+    )
