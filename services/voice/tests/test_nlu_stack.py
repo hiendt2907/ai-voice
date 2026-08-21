@@ -40,6 +40,24 @@ class TestExtractSlots:
         slots = extract_slots("đặt thứ Sáu")
         assert "appointment_date" in slots
 
+    def test_date_ngay_mot_is_plus_two_days(self):
+        from datetime import datetime, timedelta  # noqa: PLC0415
+        slots = extract_slots("đặt ngày mốt")
+        expected = (datetime.now() + timedelta(days=2)).strftime("%d/%m/%Y")
+        assert expected in slots["appointment_date"]
+
+    def test_date_ngay_kia_is_plus_three_days_not_two(self):
+        """Real bug found via manual Portal Simulator testing: "ngày kia"
+        was wrongly treated as a synonym of "ngày mốt" (both +2). The
+        Vietnamese sequential idiom is hôm nay(+0)/mai(+1)/mốt(+2)/kia(+3)/
+        kìa(+4) — "ngày kia" must resolve one day later than "ngày mốt"."""
+        from datetime import datetime, timedelta  # noqa: PLC0415
+        slots = extract_slots("đặt ngày kia")
+        expected = (datetime.now() + timedelta(days=3)).strftime("%d/%m/%Y")
+        wrong = (datetime.now() + timedelta(days=2)).strftime("%d/%m/%Y")
+        assert expected in slots["appointment_date"]
+        assert wrong not in slots["appointment_date"]
+
     def test_phone(self):
         slots = extract_slots("số điện thoại của tôi là 0901234567")
         assert slots["patient_phone"] == "0901234567"

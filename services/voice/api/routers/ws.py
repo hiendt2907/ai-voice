@@ -316,6 +316,16 @@ async def call_ws(
                         ctx.script = _load_script_file(script_id)
                     except Exception as exc:
                         logger.error("Failed to load script_id=%s: %s", script_id, exc)
+                if ctx.campaign_id and isinstance(ctx.script, dict):
+                    # Authoritative campaign_id for NLU/KB scoping — never trust
+                    # whatever (possibly stale, possibly wrong-cased) value is
+                    # baked into the script body itself. Found via real testing:
+                    # runtime/executor.py reads script_body["campaignId"]
+                    # (camelCase) but published script bodies carry
+                    # "campaign_id" (snake_case) and/or a placeholder UUID —
+                    # the mismatch silently returned None, which search_intents/
+                    # KB search both treat as "no campaign filter, see everything".
+                    ctx.script["campaignId"] = ctx.campaign_id
                 ctx.steps = _index_steps(ctx.script)
                 ctx.interception_mode = raw.get("interception_mode", "full")
                 ctx.interception_domains = raw.get("interception_domains", [])

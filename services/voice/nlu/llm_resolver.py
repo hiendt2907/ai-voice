@@ -253,11 +253,12 @@ _SLOT_DESCRIPTIONS_VN = {
 # without this, and only produced "ngày mốt" once given this exact list).
 _SLOT_VOCAB_HINTS = {
     "appointment_date": (
-        'Bộ trích xuất chỉ hiểu ĐÚNG các từ khóa sau cho ngày: "hôm nay", '
-        '"ngày mai", "ngày mốt"/"ngày kia" (2 ngày kể từ hôm nay), "tuần sau", '
-        'tên thứ trong tuần ("thứ Hai".."Chủ Nhật"), hoặc ngày/tháng dạng số '
-        '(vd "20/8", "ngày 20 tháng 8"). Ví dụ: "hai hôm nữa", "còn 2 bữa nữa" '
-        '→ đều là "ngày mốt".'
+        'Bộ trích xuất chỉ hiểu ĐÚNG các từ khóa sau cho ngày: "hôm nay" (+0), '
+        '"ngày mai" (+1), "ngày mốt" (+2), "ngày kia" (+3 — KHÔNG phải cùng '
+        'nghĩa với "ngày mốt"), "tuần sau", tên thứ trong tuần '
+        '("thứ Hai".."Chủ Nhật"), hoặc ngày/tháng dạng số (vd "20/8", '
+        '"ngày 20 tháng 8"). Ví dụ: "hai hôm nữa", "còn 2 bữa nữa" → đều là '
+        '"ngày mốt" (+2 ngày). "ba hôm nữa" → "ngày kia" (+3 ngày).'
     ),
     "time_of_day": 'Bộ trích xuất chỉ hiểu "sáng", "chiều", "tối".',
 }

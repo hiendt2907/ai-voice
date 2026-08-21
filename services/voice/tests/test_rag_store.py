@@ -81,7 +81,7 @@ async def test_search_returns_none_when_no_embeddings():
 async def test_search_returns_match_above_threshold():
     vec = _unit_vec(pos=0)
     store_module._store.append(_article(embedding=vec, threshold=0.8))
-    result = await search(vec, gender="male", max_threshold=0.8)
+    result = await search(vec, gender="male", max_threshold=0.8, linked_kb_tags=["*"])
     assert result is not None
     assert result.score > 0.99
     assert result.answer == "Đây là câu trả lời, anh."
@@ -98,9 +98,9 @@ async def test_search_returns_none_below_threshold():
 async def test_search_max_threshold_overrides_article_threshold():
     vec = _unit_vec(pos=0)
     store_module._store.append(_article(embedding=vec, threshold=0.82))
-    result = await search(vec, max_threshold=0.65)
+    result = await search(vec, max_threshold=0.65, linked_kb_tags=["*"])
     assert result is not None
-    result2 = await search(vec, max_threshold=0.82)
+    result2 = await search(vec, max_threshold=0.82, linked_kb_tags=["*"])
     assert result2 is not None
 
 
@@ -110,7 +110,7 @@ async def test_search_picks_best_of_multiple():
     store_module._store.append(_article(id="a1", embedding=close, threshold=0.8))
     store_module._store.append(_article(id="a2", embedding=far, threshold=0.8))
     query = _unit_vec(4, pos=0)
-    result = await search(query)
+    result = await search(query, linked_kb_tags=["*"])
     assert result is not None
     assert result.article.id == "a1"
 
@@ -224,17 +224,30 @@ async def test_search_tag_filter_excludes_no_overlap():
     assert result is None
 
 
-async def test_search_tag_filter_empty_filter_matches_all():
+async def test_search_tag_filter_empty_filter_matches_nothing():
+    """Strict opt-in: a script that hasn't declared any linkedKbTags gets no
+    KB access at all — silently matching everything let any untagged script
+    see every campaign's KB content (found via real-call testing)."""
     vec = _unit_vec(pos=0)
     store_module._store.append(_article(embedding=vec, threshold=0.8, tags=["booking"]))
     result = await search(vec, linked_kb_tags=[])
-    assert result is not None
+    assert result is None
 
 
-async def test_search_tag_filter_none_matches_all():
+async def test_search_tag_filter_none_matches_nothing():
     vec = _unit_vec(pos=0)
     store_module._store.append(_article(embedding=vec, threshold=0.8, tags=["anything"]))
     result = await search(vec, linked_kb_tags=None)
+    assert result is None
+
+
+async def test_search_tag_filter_wildcard_matches_all():
+    """The explicit "*" tag is how a genuine catch-all (Global) campaign
+    opts into seeing every article, instead of relying on the old
+    empty-list-means-everything default."""
+    vec = _unit_vec(pos=0)
+    store_module._store.append(_article(embedding=vec, threshold=0.8, tags=["anything"]))
+    result = await search(vec, linked_kb_tags=["*"])
     assert result is not None
 
 
@@ -304,14 +317,14 @@ CAMP_B = "bbbb-bbbb-bbbb-bbbb"
 async def test_search_campaign_id_excludes_other_campaign():
     vec = _unit_vec(pos=0)
     store_module._store.append(_article(id="b_art", embedding=vec, threshold=0.8, campaign_id=CAMP_B))
-    result = await search(vec, max_threshold=0.8, campaign_id=CAMP_A)
+    result = await search(vec, max_threshold=0.8, campaign_id=CAMP_A, linked_kb_tags=["*"])
     assert result is None
 
 
 async def test_search_campaign_id_includes_own_campaign():
     vec = _unit_vec(pos=0)
     store_module._store.append(_article(id="a_art", embedding=vec, threshold=0.8, campaign_id=CAMP_A))
-    result = await search(vec, max_threshold=0.8, campaign_id=CAMP_A)
+    result = await search(vec, max_threshold=0.8, campaign_id=CAMP_A, linked_kb_tags=["*"])
     assert result is not None
     assert result.article.id == "a_art"
 
@@ -319,7 +332,7 @@ async def test_search_campaign_id_includes_own_campaign():
 async def test_search_campaign_id_includes_global_articles():
     vec = _unit_vec(pos=0)
     store_module._store.append(_article(id="global_art", embedding=vec, threshold=0.8, campaign_id=None))
-    result = await search(vec, max_threshold=0.8, campaign_id=CAMP_A)
+    result = await search(vec, max_threshold=0.8, campaign_id=CAMP_A, linked_kb_tags=["*"])
     assert result is not None
     assert result.article.id == "global_art"
 
@@ -328,7 +341,7 @@ async def test_search_no_campaign_filter_returns_all():
     vec = _unit_vec(pos=0)
     store_module._store.append(_article(id="a_art", embedding=vec, threshold=0.8, campaign_id=CAMP_A))
     store_module._store.append(_article(id="b_art", embedding=vec, threshold=0.8, campaign_id=CAMP_B))
-    result = await search(vec, max_threshold=0.8, campaign_id=None)
+    result = await search(vec, max_threshold=0.8, campaign_id=None, linked_kb_tags=["*"])
     assert result is not None
 
 
@@ -336,5 +349,5 @@ async def test_search_prefers_campaign_article_over_global_when_both_match():
     vec = _unit_vec(pos=0)
     store_module._store.append(_article(id="global_art", embedding=vec, threshold=0.8, campaign_id=None))
     store_module._store.append(_article(id="a_art", embedding=vec, threshold=0.8, campaign_id=CAMP_A))
-    result = await search(vec, max_threshold=0.8, campaign_id=CAMP_A)
+    result = await search(vec, max_threshold=0.8, campaign_id=CAMP_A, linked_kb_tags=["*"])
     assert result is not None

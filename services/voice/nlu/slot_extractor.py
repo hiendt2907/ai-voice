@@ -188,8 +188,15 @@ def extract_slots(utterance: str) -> dict[str, str]:
         appointment_date = _format_date_vn(now)
     elif re.search(r"\bngày mai\b", utt):
         appointment_date = _format_date_vn(now + timedelta(days=1))
-    elif re.search(r"\bngày mốt\b|\bngày kia\b|\bmốt\b", utt):
+    elif re.search(r"\bngày mốt\b|\bmốt\b", utt):
         appointment_date = _format_date_vn(now + timedelta(days=2))
+    # "ngày kia" is NOT a synonym of "ngày mốt" — the Vietnamese sequential
+    # day idiom is hôm nay(+0) → mai(+1) → mốt(+2) → kia(+3) → kìa(+4). Found
+    # via real manual testing: a caller said "ngày kia" (asking for +3) and
+    # got told +2 back, then had to correct the AI ("ngày kia đâu phải
+    # 23/8... 23/8 là ngày mốt").
+    elif re.search(r"\bngày kia\b|\bngày kìa\b", utt):
+        appointment_date = _format_date_vn(now + timedelta(days=3))
     elif re.search(r"\btuần sau\b", utt):
         appointment_date = _format_date_vn(now + timedelta(days=7))
     else:

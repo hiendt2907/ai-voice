@@ -300,7 +300,16 @@ def _resolve_answer(
 
 
 def _tag_matches(article: Article, linked_kb_tags: list[str] | None) -> bool:
+    """Strict opt-in: a script must explicitly declare which KB content it
+    can use. An empty/missing linkedKbTags means NO KB access — it used to
+    mean "no filter, match everything", which silently let any script see
+    every campaign's KB articles the moment nobody bothered to tag it.
+    A script that genuinely wants everything (the Global catch-all
+    campaign) must say so explicitly with the "*" wildcard tag.
+    """
     if not linked_kb_tags:
+        return False
+    if "*" in linked_kb_tags:
         return True
     if article.category and article.category in linked_kb_tags:
         return True
