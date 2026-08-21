@@ -47,7 +47,10 @@ export class KnowledgeService {
         updatedBy: actorId ?? null,
       }),
     )
-    void this.triggerEmbed(article.id, article.questionVariants)
+    // A brand-new article isn't in the voice worker's in-memory store yet —
+    // upsert_embedding() only replaces an ID it already knows, never
+    // inserts. Full reload is the only way it goes live immediately.
+    void this.triggerReload()
     return article
   }
 
@@ -63,6 +66,7 @@ export class KnowledgeService {
   async remove(id: string): Promise<void> {
     const article = await this.get(id)
     await this.repo.remove(article)
+    void this.triggerReload()
   }
 
   async updateEmbedding(id: string, embeddingJson: string): Promise<{ ok: boolean }> {
@@ -106,6 +110,14 @@ export class KnowledgeService {
       })
     } catch {
       // Non-fatal — article saved, embedding will retry on next reload
+    }
+  }
+
+  private async triggerReload(): Promise<void> {
+    try {
+      await fetch(`${this.voiceWorkerUrl}/rag/reload`, { method: 'POST' })
+    } catch {
+      // Non-fatal — article saved, will be picked up on the next reload anyway
     }
   }
 }

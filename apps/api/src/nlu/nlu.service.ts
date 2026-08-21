@@ -45,7 +45,12 @@ export class NluService {
         isActive: dto.isActive ?? true,
       }),
     )
-    void this.triggerEmbed(doc.id, doc.content)
+    // A brand-new doc isn't in the voice worker's in-memory store yet, so
+    // the lightweight /nlu/embed call alone wouldn't actually apply it —
+    // upsert_embedding() only replaces an ID it already knows, it never
+    // inserts. Full reload is the only way a new doc goes live immediately
+    // instead of silently waiting for the next unrelated restart/reload.
+    void this.triggerReload()
     return doc
   }
 
@@ -61,6 +66,7 @@ export class NluService {
   async remove(id: string): Promise<void> {
     const doc = await this.get(id)
     await this.repo.remove(doc)
+    void this.triggerReload()
   }
 
   async updateEmbedding(id: string, embeddingJson: string): Promise<{ ok: boolean }> {
@@ -87,6 +93,14 @@ export class NluService {
       })
     } catch {
       // Non-fatal — doc saved, embedding computed on next store reload
+    }
+  }
+
+  private async triggerReload(): Promise<void> {
+    try {
+      await fetch(`${this.voiceWorkerUrl}/nlu/reload`, { method: 'POST' })
+    } catch {
+      // Non-fatal — doc saved, will be picked up on the next reload anyway
     }
   }
 }
