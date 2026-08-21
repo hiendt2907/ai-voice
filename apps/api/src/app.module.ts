@@ -16,6 +16,7 @@ import { AnalyticsModule } from './analytics/analytics.module'
 import { CallbacksModule } from './callbacks/callbacks.module'
 import { KnowledgeModule } from './knowledge/knowledge.module'
 import { NluModule } from './nlu/nlu.module'
+import { Voip24hModule } from './voip24h/voip24h.module'
 
 const isDev = process.env.NODE_ENV !== 'production'
 
@@ -53,6 +54,7 @@ const isDev = process.env.NODE_ENV !== 'production'
     CallbacksModule,
     KnowledgeModule,
     NluModule,
+    Voip24hModule,
     ...(isDev ? [DevModule] : []),
   ],
 })

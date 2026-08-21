@@ -28,6 +28,8 @@ spec:
                 name: ai-voice-config
             - secretRef:
                 name: ai-voice-secrets
+            - secretRef:
+                name: voip24h-secret
           readinessProbe:
             httpGet:
               path: /api/v1/health
