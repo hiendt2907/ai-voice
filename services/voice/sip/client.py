@@ -110,8 +110,22 @@ class SipPhone:
             self._transport.close()
 
     def _send(self, data: bytes) -> None:
+        """For requests *we* originate against our configured peer (REGISTER,
+        and the BYE we send to end a call we're in) — always the registered
+        server, correct by definition."""
         assert self._transport is not None
         self._transport.sendto(data, (self.server, self.port))
+
+    def _send_to(self, data: bytes, addr: tuple[str, int]) -> None:
+        """For responses to a request someone sent us (200 OK to their
+        OPTIONS/INVITE/BYE). RFC 3261 routes a response back via the request's
+        actual source, not a fixed configured peer — `_send()` did this for
+        every response until now, which happened to work for voip24h (its
+        signaling source has been stable) but silently breaks the moment a
+        request arrives from anywhere else, including any SBC hop that
+        doesn't source from the exact registered address:port."""
+        assert self._transport is not None
+        self._transport.sendto(data, addr)
 
     async def _register_loop(self) -> None:
         while True:
@@ -193,13 +207,13 @@ class SipPhone:
 
     async def _handle_request(self, req: m.SipMessage, addr: tuple[str, int]) -> None:
         if req.method == "OPTIONS":
-            self._send(m.build_response(req, 200, "OK", my_ip=self.my_ip, my_port=self.sip_port))
+            self._send_to(m.build_response(req, 200, "OK", my_ip=self.my_ip, my_port=self.sip_port), addr)
         elif req.method == "INVITE":
-            await self._handle_invite(req)
+            await self._handle_invite(req, addr)
         elif req.method == "ACK":
             pass  # nothing to do — RTP session already started on our 200 OK
         elif req.method == "BYE":
-            self._send(m.build_response(req, 200, "OK", my_ip=self.my_ip, my_port=self.sip_port))
+            self._send_to(m.build_response(req, 200, "OK", my_ip=self.my_ip, my_port=self.sip_port), addr)
             await self._end_call(req.call_id)
         else:
             logger.debug("Unhandled SIP method: %s", req.method)
@@ -211,12 +225,14 @@ class SipPhone:
                 return p
         raise RuntimeError("no free RTP ports")
 
-    async def _handle_invite(self, req: m.SipMessage) -> None:
+    async def _handle_invite(self, req: m.SipMessage, addr: tuple[str, int]) -> None:
         try:
             offer = sdp.parse_offer(req.body)
         except ValueError as exc:
             logger.error("Bad SDP in INVITE, rejecting: %s", exc)
-            self._send(m.build_response(req, 488, "Not Acceptable Here", my_ip=self.my_ip, my_port=self.sip_port))
+            self._send_to(
+                m.build_response(req, 488, "Not Acceptable Here", my_ip=self.my_ip, my_port=self.sip_port), addr
+            )
             return
 
         logger.debug(
@@ -230,13 +246,14 @@ class SipPhone:
         answer_sdp = sdp.build_answer(
             my_ip=self.my_ip, rtp_port=rtp_port, payload_type=payload_type, session_id=req.call_id[:10]
         )
-        self._send(
+        self._send_to(
             m.build_response(
                 req, 200, "OK",
                 my_ip=self.my_ip, my_port=self.sip_port,
                 local_tag=local_tag,
                 body=answer_sdp, content_type="application/sdp",
-            )
+            ),
+            addr,
         )
 
         rtp = RtpSession(local_port=rtp_port, remote_ip=offer.connection_ip, remote_port=offer.port)

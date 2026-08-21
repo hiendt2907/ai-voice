@@ -309,11 +309,23 @@ class TurnOrchestrator:
         trace.escalated = result.is_handoff
         await self._finish_trace(trace, t_start)
 
+        # Terminal step reached by *transition* rather than by being the step
+        # this turn processed. async_process_turn() only sets state.status when
+        # the terminal step is the current one, so on this path the status
+        # would otherwise stay "active" — and _post_call_events() maps anything
+        # that isn't "completed"/"handoff" to "error", which mislabelled every
+        # normally-finished call. Set it here, at the two legitimate terminal
+        # landings only; speak_fallback_and_end_call() deliberately leaves the
+        # status alone so genuine mid-call failures still persist as "error".
         landed_type = step.get("type", "")
         if landed_type in ("speak", "hangup"):
+            if self.state is not None:
+                self.state = self.state.with_status("completed")
             await self.end_call("hangup", step.get("id", ""))
             return
         if landed_type == "handoff":
+            if self.state is not None:
+                self.state = self.state.with_status("handoff")
             await self.end_call("handoff", step.get("id", ""))
             return
 

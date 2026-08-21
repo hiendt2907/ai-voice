@@ -250,6 +250,7 @@ export function ReportsClient({ initialCallsByDay, initialQaTrends, initialDurat
           {duration.length === 0 ? (
             <p className="text-sm text-[var(--color-text-muted)] text-center py-8">Chưa có dữ liệu</p>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
@@ -272,6 +273,7 @@ export function ReportsClient({ initialCallsByDay, initialQaTrends, initialDurat
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       </div>

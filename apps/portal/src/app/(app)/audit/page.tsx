@@ -59,6 +59,7 @@ export default async function AuditPage() {
         </div>
       ) : (
         <div className="rounded-xl border border-[var(--color-border)] bg-white overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-overlay)]">
@@ -105,6 +106,7 @@ export default async function AuditPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

@@ -142,6 +142,40 @@ def build_register(
     return msg.encode("utf-8")
 
 
+def build_invite(
+    *,
+    target_uri: str,
+    server: str,
+    port: int,
+    username: str,
+    my_ip: str,
+    my_port: int,
+    call_id: str,
+    cseq: int,
+    branch: str,
+    tag: str,
+    sdp_body: str,
+) -> bytes:
+    """UAC-side INVITE — only used by the test tool (sip/fake_caller.py) that
+    calls our own softphone directly to simulate voip24h without a real PSTN
+    leg. The softphone itself is answer-only and never builds this."""
+    body_bytes = sdp_body.encode("utf-8")
+    headers = [
+        ("Via", f"SIP/2.0/UDP {my_ip}:{my_port};branch={branch};rport"),
+        ("Max-Forwards", "70"),
+        ("From", f'<sip:{username}@{my_ip}>;tag={tag}'),
+        ("To", f"<{target_uri}>"),
+        ("Call-ID", call_id),
+        ("CSeq", f"{cseq} INVITE"),
+        ("Contact", f"<sip:{username}@{my_ip}:{my_port}>"),
+        ("User-Agent", USER_AGENT),
+        ("Content-Type", "application/sdp"),
+        ("Content-Length", str(len(body_bytes))),
+    ]
+    msg = f"INVITE {target_uri} SIP/2.0\r\n" + _serialize_headers(headers) + "\r\n" + sdp_body
+    return msg.encode("utf-8")
+
+
 def build_digest_auth(
     *,
     username: str,

@@ -98,6 +98,7 @@ export default async function CallsPage({
         </div>
       ) : (
         <div className="rounded-xl border border-[var(--color-border)] overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-[oklch(97%_0.005_250)] border-b border-[var(--color-border)]">
@@ -150,6 +151,7 @@ export default async function CallsPage({
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

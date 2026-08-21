@@ -42,6 +42,24 @@ def parse_offer(body: str) -> RemoteAudioOffer:
     return RemoteAudioOffer(connection_ip=conn_ip, port=port, payload_types=payload_types)
 
 
+def build_offer(*, my_ip: str, rtp_port: int, session_id: str) -> str:
+    """Our own SDP offer — used only by the UAC side (sip/fake_caller.py's
+    test tool), never by the answering softphone in normal call handling."""
+    lines = [
+        "v=0",
+        f"o=ai-voice {session_id} {session_id} IN IP4 {my_ip}",
+        "s=ai-voice",
+        f"c=IN IP4 {my_ip}",
+        "t=0 0",
+        f"m=audio {rtp_port} RTP/AVP {PT_PCMU} {PT_PCMA}",
+        f"a=rtpmap:{PT_PCMU} PCMU/8000",
+        f"a=rtpmap:{PT_PCMA} PCMA/8000",
+        "a=ptime:20",
+        "a=sendrecv",
+    ]
+    return "\r\n".join(lines) + "\r\n"
+
+
 def build_answer(*, my_ip: str, rtp_port: int, payload_type: int, session_id: str) -> str:
     codec_name = "PCMU" if payload_type == PT_PCMU else "PCMA"
     lines = [

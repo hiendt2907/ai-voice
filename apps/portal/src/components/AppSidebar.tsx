@@ -55,9 +55,15 @@ interface User {
 
 interface AppSidebarProps {
   user: User | null
+  /** Drawer visibility on mobile/tablet (< md). Ignored at md+, where the
+   * sidebar is always visible — see the `md:translate-x-0` override below. */
+  open?: boolean
+  /** Fired when a nav link is chosen, so the mobile drawer closes itself
+   * instead of covering the page the user just navigated to. */
+  onNavigate?: () => void
 }
 
-export function AppSidebar({ user }: AppSidebarProps) {
+export function AppSidebar({ user, open = false, onNavigate }: AppSidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const userRole = user?.role ?? 'viewer'
@@ -73,7 +79,14 @@ export function AppSidebar({ user }: AppSidebarProps) {
   }
 
   return (
-    <aside className="fixed inset-y-0 left-0 w-[220px] flex flex-col bg-[oklch(12%_0.025_250)] border-r border-[oklch(20%_0.04_250)] z-40">
+    <aside
+      className={[
+        'fixed inset-y-0 left-0 w-[220px] flex flex-col bg-[oklch(12%_0.025_250)] border-r border-[oklch(20%_0.04_250)] z-50',
+        'transition-transform duration-[var(--duration-normal)] ease-out',
+        open ? 'translate-x-0' : '-translate-x-full',
+        'md:translate-x-0',
+      ].join(' ')}
+    >
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-5 py-5 border-b border-[oklch(20%_0.04_250)]">
         <Mic2 className="w-5 h-5 text-[var(--color-accent)] shrink-0" />
@@ -88,13 +101,14 @@ export function AppSidebar({ user }: AppSidebarProps) {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 py-3 px-2.5 space-y-0.5 overflow-y-auto">
+      <nav aria-label="Điều hướng chính" className="flex-1 py-3 px-2.5 space-y-0.5 overflow-y-auto">
         {visibleNav.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
           return (
             <Link
               key={href}
               href={href}
+              onClick={onNavigate}
               className={[
                 'flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors duration-[var(--duration-fast)]',
                 active
@@ -118,6 +132,7 @@ export function AppSidebar({ user }: AppSidebarProps) {
           return (
             <Link
               href="/guide"
+              onClick={onNavigate}
               className={[
                 'flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors duration-[var(--duration-fast)]',
                 active
