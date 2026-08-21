@@ -22,5 +22,6 @@ ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 COPY --from=build /repo/apps/portal/.next/standalone ./
 COPY --from=build /repo/apps/portal/.next/static ./apps/portal/.next/static
+COPY apps/portal/custom-server.js ./apps/portal/custom-server.js
 EXPOSE 3000
-CMD ["node", "apps/portal/server.js"]
+CMD ["node", "apps/portal/custom-server.js"]

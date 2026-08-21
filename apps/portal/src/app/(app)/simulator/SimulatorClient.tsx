@@ -37,10 +37,15 @@ interface TurnMeta {
   filler: string
 }
 
-const VOICE_WS_URL =
-  typeof window !== 'undefined'
-    ? (process.env.NEXT_PUBLIC_VOICE_WS_URL ?? 'ws://localhost:8000')
-    : 'ws://localhost:8000'
+// Same-origin as the Portal page itself — the custom Next.js server
+// (apps/portal/custom-server.js) proxies /ws/call to the voice worker's
+// in-cluster ClusterIP, since Portal and voice run in the same k8s
+// namespace and the browser has no direct route to voice's internal DNS.
+function resolveVoiceWsUrl(): string {
+  if (typeof window === 'undefined') return ''
+  const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${scheme}//${window.location.host}`
+}
 
 function uid() {
   return Math.random().toString(36).slice(2)
@@ -102,17 +107,8 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
   const [aiSpeaking, setAiSpeaking] = useState(false)
   const [micActive, setMicActive] = useState(false)
   const [useRealTts, setUseRealTts] = useState(true)
-  const [ttsEngine, setTtsEngine] = useState<string>('elevenlabs')
+  const [ttsEngine, setTtsEngine] = useState<string>('xkiro')
   const [switchingEngine, setSwitchingEngine] = useState(false)
-  const [aiModel, setAiModel] = useState<string>('qwen2.5:latest')
-  const [switchingModel, setSwitchingModel] = useState(false)
-  const [aiSettings, setAiSettings] = useState<Record<string, unknown>>({
-    ollamaBaseUrl: 'http://localhost:11434/v1',
-    ollamaModel: 'qwen2.5:latest',
-    nluTimeoutMs: 800,
-    responseTimeoutMs: 2000,
-    fallbackToSubstring: true,
-  })
   const [hasSpeechRecognition, setHasSpeechRecognition] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -138,13 +134,6 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
       if (r.ok) {
         const d = await r.json() as { engine?: string }
         if (d.engine) setTtsEngine(d.engine)
-      }
-    })
-    void fetch('/api/v1/settings/ai').then(async (r) => {
-      if (r.ok) {
-        const { id: _id, updatedBy: _ub, updatedAt: _ua, ...d } = await r.json() as Record<string, unknown>
-        if (Object.keys(d).length > 0) setAiSettings((prev) => ({ ...prev, ...d }))
-        if (d.ollamaModel) setAiModel(d.ollamaModel as string)
       }
     })
   }, [])
@@ -283,7 +272,7 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
 
     setWsStatus('connecting')
 
-    const ws = new WebSocket(`${VOICE_WS_URL}/ws/call`)
+    const ws = new WebSocket(`${resolveVoiceWsUrl()}/ws/call`)
     wsRef.current = ws
 
     ws.onopen = () => {
@@ -453,44 +442,19 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
               ].join(' ')}
               title="Chọn TTS engine — lưu ngay vào Settings"
             >
-              <option value="elevenlabs">ElevenLabs</option>
-              <option value="edge-tts">edge-tts (miễn phí)</option>
-              <option value="gwen-tts">gwen-tts (local)</option>
+              <option value="xkiro">xKiro (cloud, mặc định)</option>
+              <option value="edge-tts">edge-tts (dự phòng, miễn phí)</option>
               <option value="disabled">Tắt TTS</option>
             </select>
 
-            {/* AI model switcher */}
-            <select
-              disabled={isRunning || switchingModel}
-              value={aiModel}
-              onChange={(e) => {
-                const model = e.target.value
-                setSwitchingModel(true)
-                void fetch('/api/v1/settings/ai', {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    ...aiSettings,
-                    ollamaModel: model,
-                  }),
-                }).then(() => {
-                  setAiModel(model)
-                  setAiSettings((prev) => ({ ...prev, ollamaModel: model }))
-                }).finally(() => setSwitchingModel(false))
-              }}
-              className={[
-                'text-xs border rounded-lg px-2 py-1 bg-white text-[var(--color-text)] border-[var(--color-border)]',
-                'focus:outline-none focus:border-[var(--color-accent)]',
-                (isRunning || switchingModel) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
-              ].join(' ')}
-              title="Chọn AI model — lưu ngay và reload voice worker"
+            {/* LLM hiện cố định qua xKiro (services/voice/api/config.py — LLM_MODEL),
+                không đổi được theo phiên như trước (thời Ollama local) nữa. */}
+            <span
+              className="text-xs text-[var(--color-text-muted)] px-2 py-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] whitespace-nowrap"
+              title="Model LLM cấu hình cố định ở server (xKiro), không đổi qua Simulator được"
             >
-              <option value="qwen2.5:latest">qwen2.5</option>
-              <option value="qwen2.5:7b">qwen2.5:7b</option>
-              <option value="llama3.2:latest">llama3.2</option>
-              <option value="gemma3:latest">gemma3</option>
-              <option value="claude-haiku-4-5-20251001">claude haiku</option>
-            </select>
+              qwen3.5-flash (xKiro)
+            </span>
 
             {/* Real TTS toggle */}
             <button
