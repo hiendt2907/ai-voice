@@ -23,12 +23,15 @@ data:
   LLM_PROVIDER: "ollama"   # "ollama" == generic OpenAI-compatible client path
   LLM_BASE_URL: "https://api.xkiro.com/v1"
   LLM_MODEL: "qwen/qwen3.5-flash"
-  # Off on GCP live (kubectl patch, 2026-08-20) — 242-example vector NLU
-  # dataset (P9) covers all script intents with 0 LLM calls per test call;
-  # LLM NLU tier adds ~2s latency for no accuracy gain right now. Flip to
-  # "true" only after confirming vector NLU is missing coverage for a real
-  # intent (check tier=clarify rate in glassbox turn traces first).
-  USE_LLM_NLU: "false"
+  # Back ON (2026-08-21) — needed for the slot-recovery path added in
+  # runtime/executor.py: a step whose transitions gate on a slot (not
+  # intent) can get stuck reprompting forever when STT garbles a common
+  # word ("hôm nay" → "hãy nay") and the regex extractor can't match. That
+  # recovery path is itself gated on this flag. Vector NLU (P9, 242
+  # examples) still runs first and handles intent classification with 0 LLM
+  # calls in the common case; this only adds the full-conversation-context
+  # LLM call as a fallback, not a replacement.
+  USE_LLM_NLU: "true"
 
   # STT stays on the Macbook inference server (faster-whisper) over Tailscale —
   # xKiro has no speech-to-text endpoint (/v1/audio/transcriptions returns 404
