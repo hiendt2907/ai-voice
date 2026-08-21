@@ -211,6 +211,12 @@ def extract_slots(utterance: str) -> dict[str, str]:
     elif (m := re.search(r"\b(hai|ba|bốn|năm|sáu|bảy)\s+(?:hôm|ngày|bữa)\s+nữa\b", utt)):
         _NUM_WORDS = {"hai": 2, "ba": 3, "bốn": 4, "năm": 5, "sáu": 6, "bảy": 7}
         appointment_date = _format_date_vn(now + timedelta(days=_NUM_WORDS[m.group(1)]))
+    # Same idiom, digit form ("còn 2 ngày nữa", "3 bữa nữa") — a batch test
+    # caught this falling through the word-form branch above straight to
+    # the LLM, which guessed wrong (+3 instead of +2) with no exact keyword
+    # to anchor on.
+    elif (m := re.search(r"\b(\d{1,2})\s+(?:hôm|ngày|bữa)\s+nữa\b", utt)):
+        appointment_date = _format_date_vn(now + timedelta(days=int(m.group(1))))
     elif re.search(r"\btuần sau\b", utt):
         appointment_date = _format_date_vn(now + timedelta(days=7))
     else:

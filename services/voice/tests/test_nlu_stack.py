@@ -84,6 +84,17 @@ class TestExtractSlots:
             expected = (datetime.now() + timedelta(days=offset)).strftime("%d/%m/%Y")
             assert expected in slots["appointment_date"], f"{word} hôm nữa should be +{offset} days"
 
+    def test_date_counting_digits_n_ngay_nua(self):
+        """Digit form of the same idiom ("còn 2 ngày nữa") — real bug found
+        by an automated date-correctness check over a 95-call batch: this
+        fell through the word-form branch straight to the LLM, which
+        guessed +3 instead of +2 with no exact keyword to anchor on."""
+        from datetime import datetime, timedelta  # noqa: PLC0415
+        for n in (2, 3, 4, 5):
+            slots = extract_slots(f"còn {n} ngày nữa")
+            expected = (datetime.now() + timedelta(days=n)).strftime("%d/%m/%Y")
+            assert expected in slots["appointment_date"], f"{n} ngày nữa should be +{n} days"
+
     def test_phone(self):
         slots = extract_slots("số điện thoại của tôi là 0901234567")
         assert slots["patient_phone"] == "0901234567"
