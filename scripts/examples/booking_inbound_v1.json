@@ -345,6 +345,15 @@
           "id": "r2",
           "beats": [
             {
+              "text": "Anh chị có thể đọc số điện thoại 10 số, ví dụ 09xx xxx xxx ạ.",
+              "pause_after": "turn"
+            }
+          ]
+        },
+        {
+          "id": "r3",
+          "beats": [
+            {
               "text": "Dạ em xin phép chuyển anh chị tới nhân viên để hỗ trợ ạ.",
               "pause_after": "turn"
             }
@@ -471,6 +480,15 @@
           "id": "r2",
           "beats": [
             {
+              "text": "Anh chị muốn đổi tên, số điện thoại, ngày khám, hay giờ khám ạ?",
+              "pause_after": "turn"
+            }
+          ]
+        },
+        {
+          "id": "r3",
+          "beats": [
+            {
               "text": "Dạ em xin phép chuyển anh chị tới nhân viên để hỗ trợ ạ.",
               "pause_after": "turn"
             }
@@ -530,6 +548,24 @@
           "beats": [
             {
               "text": "Dạ anh chị có cần em hỗ trợ thêm gì không ạ?",
+              "pause_after": "turn"
+            }
+          ]
+        },
+        {
+          "id": "r2",
+          "beats": [
+            {
+              "text": "Dạ nếu không cần gì thêm, em xin phép kết thúc cuộc gọi ạ.",
+              "pause_after": "turn"
+            }
+          ]
+        },
+        {
+          "id": "r3",
+          "beats": [
+            {
+              "text": "Dạ em cảm ơn anh chị đã gọi, chúc anh chị một ngày tốt lành ạ.",
               "pause_after": "turn"
             }
           ]
