@@ -3,18 +3,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { PhoneCall, Loader2, AlertCircle, Radio } from 'lucide-react'
 
+// Matches obs/turn_trace.py::TurnTrace.to_dict() — nested, not flat.
 interface WatchMessage {
   event: string
-  agent_text?: string
-  intent?: string | null
-  step_from?: string
-  step_to?: string
+  agent?: { text?: string }
+  stt?: { text?: string }
+  nlu?: { intent?: string | null }
+  routing?: { step_from?: string; step_to?: string }
   [key: string]: unknown
 }
 
 interface TranscriptLine {
   id: string
-  role: 'ai' | 'system'
+  role: 'ai' | 'user' | 'system'
   text: string
   meta?: string
 }
@@ -56,12 +57,19 @@ export function RealCallPanel() {
       try {
         const msg = JSON.parse(e.data) as WatchMessage
         if (msg.event === 'turn_trace') {
-          if (msg.agent_text) {
-            setLines((prev) => [...prev, {
-              id: uid(), role: 'ai', text: msg.agent_text as string,
-              meta: [msg.step_to, msg.intent].filter(Boolean).join(' · '),
-            }])
-          }
+          const callerText = msg.stt?.text
+          const agentText = msg.agent?.text
+          setLines((prev) => {
+            const next = [...prev]
+            if (callerText) next.push({ id: uid(), role: 'user', text: callerText })
+            if (agentText) {
+              next.push({
+                id: uid(), role: 'ai', text: agentText,
+                meta: [msg.routing?.step_to, msg.nlu?.intent].filter(Boolean).join(' · '),
+              })
+            }
+            return next
+          })
         } else if (msg.event === 'hangup' || msg.event === 'handoff') {
           setLines((prev) => [...prev, { id: uid(), role: 'system', text: `— Cuộc gọi kết thúc (${msg.event}) —` }])
           setWatching(false)
@@ -147,13 +155,21 @@ export function RealCallPanel() {
           </div>
         )}
         {lines.map((l) => (
-          <div key={l.id} className={l.role === 'system' ? 'flex justify-center' : 'flex justify-start'}>
+          <div key={l.id} className={[
+            'flex',
+            l.role === 'system' ? 'justify-center' : l.role === 'user' ? 'justify-end' : 'justify-start',
+          ].join(' ')}>
             {l.role === 'system' ? (
               <span className="text-xs text-[var(--color-text-muted)] bg-[var(--color-surface)] px-3 py-1 rounded-full">
                 {l.text}
               </span>
             ) : (
-              <div className="max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed bg-[var(--color-surface)] text-[var(--color-text)] rounded-tl-sm">
+              <div className={[
+                'max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed',
+                l.role === 'user'
+                  ? 'bg-[var(--color-accent)] text-white rounded-tr-sm'
+                  : 'bg-[var(--color-surface)] text-[var(--color-text)] rounded-tl-sm',
+              ].join(' ')}>
                 <p>{l.text}</p>
                 {l.meta && <p className="text-xs mt-1 font-mono opacity-60">{l.meta}</p>}
               </div>
