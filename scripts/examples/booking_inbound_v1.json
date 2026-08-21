@@ -129,12 +129,8 @@
       ],
       "transitions": [
         {
-          "when": "slot.appointment_date != null && slot.time_slot != null",
-          "goto": "confirm_time_available"
-        },
-        {
           "when": "slot.appointment_date != null",
-          "goto": "collect_time"
+          "goto": "confirm_time_available"
         }
       ],
       "fallback_goto": "handoff_to_staff",

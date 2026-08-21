@@ -10,6 +10,7 @@ Pure logic, no I/O: all side-effects (TTS, STT, Redis) are injected externally.
 from __future__ import annotations
 
 import logging
+import random
 import re
 import uuid
 from dataclasses import dataclass
@@ -135,6 +136,20 @@ _WEEKDAYS_VN = ["thứ Hai", "thứ Ba", "thứ Tư", "thứ Năm", "thứ Sáu"
 
 def _weekday_vn(weekday: int) -> str:
     return _WEEKDAYS_VN[weekday]
+
+
+# TEMPORARY placeholder for a real merchant-calendar availability lookup —
+# there is no merchant API integration yet (planned separately). Picks a
+# plausible clinic-hours slot so the flow doesn't stall asking the caller to
+# guess a free hour themselves; replace `_mock_pick_available_slot` with an
+# actual API call once that integration lands.
+_MOCK_AVAILABLE_HOURS = ["8:00", "8:30", "9:00", "9:30", "10:00", "14:00", "14:30", "15:00", "15:30", "16:00"]
+
+
+def _mock_pick_available_slot() -> dict[str, str]:
+    hour = random.choice(_MOCK_AVAILABLE_HOURS)
+    time_of_day = "sáng" if int(hour.split(":")[0]) < 12 else "chiều"
+    return {"appointment_hour": hour, "time_of_day": time_of_day}
 
 
 def create_session(script_body: dict) -> SessionState:
@@ -304,6 +319,14 @@ def process_turn(
 
     if next_step_id is not None:
         state = state.with_step(next_step_id)
+        # Caller gave a date but never specified a time — mock-assign an
+        # available slot instead of making them guess an exact hour (see
+        # _mock_pick_available_slot docstring: placeholder for merchant API).
+        if next_step_id == "confirm_time_available" and not state.slots.get("time_slot"):
+            state = state.with_slots(_mock_pick_available_slot())
+            derived = _recompute_derived_slots(dict(state.slots))
+            if derived:
+                state = state.with_slots(derived)
     else:
         # Still within reprompt budget
         state = state.increment_no_match(state.current_step_id)
