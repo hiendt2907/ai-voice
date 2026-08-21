@@ -218,6 +218,51 @@ async def resolve_with_llm(
     )
 
 
+_SYSTEM_TEMPLATE_STT_CORRECT = """\
+Bạn đang xem transcript một cuộc gọi tới phòng khám. STT đôi khi nghe nhầm \
+một từ tiếng Việt phổ thông (không phải thuật ngữ y khoa) thành từ gần âm, \
+ví dụ "hôm nay" bị nghe thành "hãy nay".
+
+Dựa vào TOÀN BỘ hội thoại bên dưới để hiểu ngữ cảnh (AI vừa hỏi gì), hãy đoán \
+lại câu khách VỪA NÓI (dòng "user" cuối cùng). Chỉ sửa từ mà bạn tin chắc bị \
+nghe nhầm dựa trên ngữ cảnh; nếu không chắc, giữ nguyên nguyên văn.
+
+Chỉ trả JSON, không giải thích: {"corrected_text":"..."}
+"""
+
+
+async def correct_utterance_with_context(utterance: str, state: SessionState) -> str:
+    """Best-effort STT correction using the *full* conversation transcript.
+
+    Used only as a slot-recovery retry when a step's required slot came back
+    empty from the regex extractor — never to answer the caller directly, so
+    a bad guess here is inert: the corrected text is fed straight back into
+    `extract_slots()` (the same trusted regex used everywhere else), and if
+    nothing matches, the caller falls through to the normal reprompt/handoff
+    path exactly as if this had never run. That is what keeps this safe to
+    call with full history despite the "don't fabricate" guardrail elsewhere
+    in the system — nothing generated here is ever spoken.
+    """
+    messages: list[dict] = [{"role": "system", "content": _SYSTEM_TEMPLATE_STT_CORRECT}]
+    for entry in state.transcript:
+        if entry.role == "agent":
+            messages.append({"role": "assistant", "content": entry.text})
+        elif entry.role == "user":
+            messages.append({"role": "user", "content": entry.text})
+    messages.append({"role": "user", "content": utterance})
+
+    try:
+        raw_content = await _chat_json(
+            messages, max_tokens=100, temperature=0.1, timeout_s=_TIMEOUT_S
+        )
+        parsed = json.loads(raw_content)
+        corrected = parsed.get("corrected_text")
+        return corrected if isinstance(corrected, str) and corrected.strip() else utterance
+    except Exception as exc:
+        logger.info("STT context-correction unavailable, keeping original text: %s", exc)
+        return utterance
+
+
 async def warmup() -> None:
     """Pre-load the LLM model into memory to avoid cold-start latency on first call."""
     try:

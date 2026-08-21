@@ -381,6 +381,43 @@ async def async_process_turn(
                 type(llm_exc).__name__, llm_exc,
             )
 
+    # Slot-recovery retry: a step whose only way forward needs a specific
+    # slot (e.g. collect_date needs slot.appointment_date) can be stuck in a
+    # blind reprompt loop even when the intent tier reported "confident" —
+    # that tier reflects the confidence of the (possibly wrong) intent match,
+    # not whether the slot the FSM actually checks got filled. Try once to
+    # recover the missing slot using the full conversation as context before
+    # falling through to the ordinary reprompt/handoff path.
+    if _Settings().use_llm_nlu and nlu_result is not None:
+        from runtime.fsm import extract_step_required_slots  # noqa: PLC0415
+
+        _required_slots = extract_step_required_slots(_cur_step)
+        _have_slots = {**state.slots, **nlu_result.slots}
+        _missing_slots = [s for s in _required_slots if not _have_slots.get(s)]
+        if _missing_slots:
+            try:
+                from nlu.llm_resolver import correct_utterance_with_context  # noqa: PLC0415
+                from nlu.slot_extractor import extract_slots as _retry_extract_slots  # noqa: PLC0415
+
+                corrected = await correct_utterance_with_context(utterance, state)
+                if corrected != utterance:
+                    retried_slots = _retry_extract_slots(corrected)
+                    recovered = {
+                        k: v for k, v in retried_slots.items() if k in _missing_slots and v
+                    }
+                    if recovered:
+                        logger.info(
+                            "Slot recovery via STT context-correction: step=%s "
+                            "missing=%s original=%.40r corrected=%.40r recovered=%s",
+                            state.current_step_id, _missing_slots, utterance, corrected, recovered,
+                        )
+                        import dataclasses as _dc_slots  # noqa: PLC0415
+                        nlu_result = _dc_slots.replace(
+                            nlu_result, slots={**nlu_result.slots, **recovered}
+                        )
+            except Exception as recovery_exc:
+                logger.info("Slot recovery unavailable: %s", recovery_exc)
+
     if nlu_result is not None:
         # Convert to MatchResult for the existing FSM engine
         override = MatchResult(

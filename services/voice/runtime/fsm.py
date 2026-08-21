@@ -77,6 +77,7 @@ def evaluate_condition(condition: str, intent: str | None, slots: dict[str, str]
 
 
 _INTENT_EQ_SEARCH = re.compile(r"intent\s*==\s*['\"]([^'\"]+)['\"]")
+_SLOT_NOT_NULL_SEARCH = re.compile(r"slot\.(\w+)\s*!=\s*null")
 
 
 def extract_step_intents(step: dict) -> list[str]:
@@ -89,6 +90,24 @@ def extract_step_intents(step: dict) -> list[str]:
             if intent not in intents:
                 intents.append(intent)
     return intents
+
+
+def extract_step_required_slots(step: dict) -> list[str]:
+    """Return slot names this step's transitions gate on (`slot.NAME != null`).
+
+    A step whose only way forward requires one of these slots but never gets
+    it just cycles its reprompt_variants until max_no_match — this list is
+    what lets the executor notice that and try harder (e.g. LLM-assisted slot
+    recovery) instead of reprompting blindly.
+    """
+    slots: list[str] = []
+    for t in step.get("transitions", []):
+        when = t.get("when", "")
+        for m in _SLOT_NOT_NULL_SEARCH.finditer(when):
+            name = m.group(1)
+            if name not in slots:
+                slots.append(name)
+    return slots
 
 
 def resolve_next_step(
