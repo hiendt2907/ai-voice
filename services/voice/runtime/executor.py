@@ -158,17 +158,24 @@ _TIME_SLOT_KEYS = ["time_slot", "appointment_hour", "time_of_day"]
 def _clear_stale_time_on_rejection(
     state: SessionState, next_step_id: str | None, intent: str | None, new_slots: dict[str, str]
 ) -> SessionState:
-    """Caller rejected the offered time (deny/change_time) without giving a
-    new one in the same utterance — clear the old time so the multi-slot
-    skip doesn't immediately bounce back to confirm_time_available and
-    re-read the SAME rejected offer verbatim. If the utterance already
-    carried a fresh time (e.g. "không, đổi sang 3 giờ chiều"), leave it —
-    that's the caller's new preference, not stale state."""
+    """Caller rejected the offered time (deny/change_time) — drop the old
+    time_slot/appointment_hour/time_of_day and keep only whatever the SAME
+    utterance freshly gave (if anything), then recompute time_slot from
+    that. Without this, giving only a new time_of_day ("buổi sáng") while
+    the old appointment_hour ("9:30") survives untouched recomputes back to
+    the exact same time_slot string, and the multi-slot skip bounces
+    straight back to confirm_time_available re-reading the SAME rejected
+    offer verbatim — a caller saying just "buổi sáng" clearly wants a new
+    hour picked within that period, not to keep the old one silently."""
     if next_step_id != "collect_time" or intent not in ("deny", "change_time"):
         return state
-    if "time_of_day" in new_slots or "appointment_hour" in new_slots:
-        return state
-    return state.without_slots(_TIME_SLOT_KEYS)
+    cleared = state.without_slots(_TIME_SLOT_KEYS)
+    fresh = {k: v for k, v in new_slots.items() if k in _TIME_SLOT_KEYS}
+    if not fresh:
+        return cleared
+    cleared = cleared.with_slots(fresh)
+    derived = _recompute_derived_slots(dict(cleared.slots))
+    return cleared.with_slots(derived) if derived else cleared
 
 
 def _fill_time_slot_if_landing_unset(state: SessionState, next_step_id: str | None) -> SessionState:

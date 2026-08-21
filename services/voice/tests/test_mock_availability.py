@@ -60,14 +60,30 @@ class TestClearStaleTimeOnRejection:
         result = _clear_stale_time_on_rejection(state, "collect_time", "change_time", new_slots={})
         assert "time_slot" not in result.slots
 
-    def test_keeps_fresh_time_given_in_same_utterance(self):
-        """"không, đổi sang 3 giờ chiều" — the new preference must survive,
-        not get wiped by the same-turn clear."""
+    def test_applies_fresh_full_time_given_in_same_utterance(self):
+        """"không, đổi sang 3 giờ chiều" — the new preference must survive
+        (and fully replace the old one), not get silently kept as the old
+        9:30 alongside a half-updated day-part."""
         state = _state(time_slot="buổi sáng lúc 10:00 giờ", appointment_hour="10:00", time_of_day="sáng")
         result = _clear_stale_time_on_rejection(
             state, "collect_time", "change_time", new_slots={"time_of_day": "chiều", "appointment_hour": "15"}
         )
-        assert result.slots.get("time_of_day") == "sáng"  # unchanged by this function — merge happens earlier
+        assert result.slots.get("time_of_day") == "chiều"
+        assert result.slots.get("appointment_hour") == "15"
+        assert result.slots.get("time_slot") == "buổi chiều lúc 15 giờ"
+
+    def test_partial_new_time_of_day_drops_stale_hour(self):
+        """Real bug found via 114-call batch test: caller says just "buổi
+        sáng" (no hour) after the offered "9:30" — the OLD hour must not
+        survive and recombine into the same offer as before, or the flow
+        bounces straight back to confirm_time_available repeating the exact
+        same rejected text verbatim."""
+        state = _state(time_slot="buổi sáng lúc 9:30 giờ", appointment_hour="9:30", time_of_day="sáng")
+        result = _clear_stale_time_on_rejection(
+            state, "collect_time", "change_time", new_slots={"time_of_day": "sáng"}
+        )
+        assert "appointment_hour" not in result.slots
+        assert result.slots.get("time_slot") == "buổi sáng"
 
     def test_noop_for_confirm_intent(self):
         state = _state(time_slot="buổi sáng lúc 10:00 giờ")
