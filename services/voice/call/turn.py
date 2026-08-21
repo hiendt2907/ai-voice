@@ -299,6 +299,27 @@ class TurnOrchestrator:
             step = self.ctx.steps.get(self.state.current_step_id, {})
             no_match = self.state.get_no_match_count(self.state.current_step_id)
 
+        # Terminal step reached by *transition* rather than by being the step
+        # this turn processed. async_process_turn() only sets state.status when
+        # the terminal step is the current one, so on this path the status
+        # would otherwise stay "active" — and _post_call_events() maps anything
+        # that isn't "completed"/"handoff" to "error", which mislabelled every
+        # normally-finished call. Set it BEFORE streaming, not after: the FSM
+        # has already fully decided the outcome by this point, and a caller
+        # hanging up mid-sentence on the AI's own terminal line (very
+        # ordinary — they hear "tạm biệt" and hang up before the trailing
+        # audio finishes) makes _stream_step raise WebSocketDisconnect. That
+        # used to propagate straight out of this function into turn_handler's
+        # generic exception→fallback path, persisting a call that had
+        # genuinely reached its correct terminal step as status="error".
+        # speak_fallback_and_end_call() deliberately leaves status alone so
+        # genuine mid-call failures (not a peer hangup) still show "error".
+        landed_type = step.get("type", "")
+        if landed_type in ("speak", "hangup") and self.state is not None:
+            self.state = self.state.with_status("completed")
+        elif landed_type == "handoff" and self.state is not None:
+            self.state = self.state.with_status("handoff")
+
         await self._stream_step(step, dict(self.state.slots), no_match, t_start)
 
         trace.step_from = step_from
@@ -309,23 +330,10 @@ class TurnOrchestrator:
         trace.escalated = result.is_handoff
         await self._finish_trace(trace, t_start)
 
-        # Terminal step reached by *transition* rather than by being the step
-        # this turn processed. async_process_turn() only sets state.status when
-        # the terminal step is the current one, so on this path the status
-        # would otherwise stay "active" — and _post_call_events() maps anything
-        # that isn't "completed"/"handoff" to "error", which mislabelled every
-        # normally-finished call. Set it here, at the two legitimate terminal
-        # landings only; speak_fallback_and_end_call() deliberately leaves the
-        # status alone so genuine mid-call failures still persist as "error".
-        landed_type = step.get("type", "")
         if landed_type in ("speak", "hangup"):
-            if self.state is not None:
-                self.state = self.state.with_status("completed")
             await self.end_call("hangup", step.get("id", ""))
             return
         if landed_type == "handoff":
-            if self.state is not None:
-                self.state = self.state.with_status("handoff")
             await self.end_call("handoff", step.get("id", ""))
             return
 
