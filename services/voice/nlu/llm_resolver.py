@@ -254,11 +254,14 @@ _SLOT_DESCRIPTIONS_VN = {
 _SLOT_VOCAB_HINTS = {
     "appointment_date": (
         'Bộ trích xuất chỉ hiểu ĐÚNG các từ khóa sau cho ngày: "hôm nay" (+0), '
-        '"ngày mai" (+1), "ngày mốt" (+2), "ngày kia" (+3 — KHÔNG phải cùng '
-        'nghĩa với "ngày mốt"), "tuần sau", tên thứ trong tuần '
-        '("thứ Hai".."Chủ Nhật"), hoặc ngày/tháng dạng số (vd "20/8", '
-        '"ngày 20 tháng 8"). Ví dụ: "hai hôm nữa", "còn 2 bữa nữa" → đều là '
-        '"ngày mốt" (+2 ngày). "ba hôm nữa" → "ngày kia" (+3 ngày).'
+        '"ngày mai" (+1), "ngày mốt" (+2), "ngày kia" (+3), "ngày kìa" (+4) — '
+        'đây là 5 từ khác nhau, KHÔNG được coi bất kỳ 2 từ nào trong số này là '
+        'đồng nghĩa. Ngoài ra còn "tuần sau", tên thứ trong tuần ("thứ Hai"..'
+        '"Chủ Nhật"), ngày/tháng dạng số (vd "20/8", "ngày 20 tháng 8"), và '
+        'cách đếm "hai/ba/bốn/năm/sáu/bảy hôm (hoặc ngày/bữa) nữa" (vd "ba '
+        'hôm nữa" = +3 ngày = tương đương "ngày kia", "bốn hôm nữa" = +4 '
+        'ngày = tương đương "ngày kìa" — LUÔN cộng đúng số ngày, không đoán '
+        'áng chừng).'
     ),
     "time_of_day": 'Bộ trích xuất chỉ hiểu "sáng", "chiều", "tối".',
 }

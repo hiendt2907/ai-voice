@@ -58,6 +58,32 @@ class TestExtractSlots:
         assert expected in slots["appointment_date"]
         assert wrong not in slots["appointment_date"]
 
+    def test_date_ngay_kia_vs_ngay_kia_not_conflated(self):
+        """Real bug found via a 95-call batch test: my own first fix for
+        "ngày kia" accidentally grouped "ngày kìa" into the SAME +3 branch —
+        they must resolve to different dates (+3 vs +4)."""
+        from datetime import datetime, timedelta  # noqa: PLC0415
+        kia = extract_slots("đặt ngày kia")["appointment_date"]
+        kia_expected = (datetime.now() + timedelta(days=3)).strftime("%d/%m/%Y")
+        assert kia_expected in kia
+
+        kia_dau = extract_slots("đặt ngày kìa")["appointment_date"]
+        kia_dau_expected = (datetime.now() + timedelta(days=4)).strftime("%d/%m/%Y")
+        assert kia_dau_expected in kia_dau
+        assert kia != kia_dau
+
+    def test_date_counting_words_n_hom_nua(self):
+        """"ba hôm nữa"/"bốn hôm nữa" etc. handled directly by regex instead
+        of relying on the LLM slot-recovery path to guess the mapping —
+        found via batch test: the LLM had no "+4" keyword to reach for and
+        silently mapped "bốn hôm nữa" onto the same (wrong) date as "ba hôm
+        nữa"."""
+        from datetime import datetime, timedelta  # noqa: PLC0415
+        for word, offset in [("hai", 2), ("ba", 3), ("bốn", 4), ("năm", 5)]:
+            slots = extract_slots(f"đặt {word} hôm nữa")
+            expected = (datetime.now() + timedelta(days=offset)).strftime("%d/%m/%Y")
+            assert expected in slots["appointment_date"], f"{word} hôm nữa should be +{offset} days"
+
     def test_phone(self):
         slots = extract_slots("số điện thoại của tôi là 0901234567")
         assert slots["patient_phone"] == "0901234567"

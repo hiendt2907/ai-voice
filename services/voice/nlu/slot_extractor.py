@@ -194,9 +194,23 @@ def extract_slots(utterance: str) -> dict[str, str]:
     # day idiom is hôm nay(+0) → mai(+1) → mốt(+2) → kia(+3) → kìa(+4). Found
     # via real manual testing: a caller said "ngày kia" (asking for +3) and
     # got told +2 back, then had to correct the AI ("ngày kia đâu phải
-    # 23/8... 23/8 là ngày mốt").
-    elif re.search(r"\bngày kia\b|\bngày kìa\b", utt):
+    # 23/8... 23/8 là ngày mốt"). "kìa" is one more day than "kia" — a
+    # 100-call batch test caught these being conflated too (both landed on
+    # the same date), so they must stay in separate branches.
+    elif re.search(r"\bngày kìa\b", utt):
+        appointment_date = _format_date_vn(now + timedelta(days=4))
+    elif re.search(r"\bngày kia\b", utt):
         appointment_date = _format_date_vn(now + timedelta(days=3))
+    # Vietnamese counting-word phrasing ("hai/ba/bốn hôm nữa", "còn N bữa
+    # nữa") — handled directly by regex instead of relying on the LLM
+    # slot-recovery path to map it onto one of the keyword phrases above.
+    # Found via the same batch test: the LLM prompt only had explicit
+    # examples up to "ba hôm nữa" → it silently mapped "bốn hôm nữa" to the
+    # same (wrong, one day short) answer as "ba hôm nữa" since it had no
+    # +4 keyword to reach for.
+    elif (m := re.search(r"\b(hai|ba|bốn|năm|sáu|bảy)\s+(?:hôm|ngày|bữa)\s+nữa\b", utt)):
+        _NUM_WORDS = {"hai": 2, "ba": 3, "bốn": 4, "năm": 5, "sáu": 6, "bảy": 7}
+        appointment_date = _format_date_vn(now + timedelta(days=_NUM_WORDS[m.group(1)]))
     elif re.search(r"\btuần sau\b", utt):
         appointment_date = _format_date_vn(now + timedelta(days=7))
     else:
