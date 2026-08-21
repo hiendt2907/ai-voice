@@ -110,6 +110,14 @@ class ElevenLabsQuotaTracker:
         }
 
 
+async def _prepend(first: bytes | None, rest: AsyncGenerator[bytes, None]) -> AsyncGenerator[bytes, None]:
+    """Re-attach a chunk already pulled out of `rest` back onto its stream."""
+    if first is not None:
+        yield first
+    async for chunk in rest:
+        yield chunk
+
+
 class TTSChain:
     """Try engines in order; skip open circuits and exhausted quota."""
 
@@ -158,6 +166,19 @@ class TTSChain:
     async def stream_synthesize(
         self, text: str, params: TTSParams | None = None
     ) -> AsyncGenerator[bytes, None]:
+        """Try each engine in order, falling back on failure.
+
+        Calling `engine.stream_synthesize(...)` only constructs an async
+        generator — for the HTTP-backed engines (xKiro, ElevenLabs, edge-tts)
+        nothing actually happens over the network until it's iterated. A
+        try/except around just the construction call therefore never sees
+        the errors that matter (a 503, a dropped connection): the generator
+        object comes back fine and the real failure only surfaces later, in
+        the caller's `async for`, by which point this method has already
+        returned and there is no more engine left to fall back to — a whole
+        turn goes out silently instead of retrying on edge-tts. Priming the
+        first chunk here, inside the try, is what makes the fallback real.
+        """
         last_exc: Exception | None = None
         for engine, name in zip(self._engines, self._names):
             if self._breaker.is_open(name):
@@ -166,8 +187,12 @@ class TTSChain:
                 if name == "elevenlabs":
                     await self._quota.count_chars(len(text))
                 gen: AsyncGenerator[bytes, None] = await engine.stream_synthesize(text, params)  # type: ignore[union-attr]
+                try:
+                    first_chunk = await anext(gen)
+                except StopAsyncIteration:
+                    first_chunk = None
                 self._breaker.record_success(name)
-                return gen
+                return _prepend(first_chunk, gen)
             except QuotaExceededError as exc:
                 last_exc = exc
                 continue
