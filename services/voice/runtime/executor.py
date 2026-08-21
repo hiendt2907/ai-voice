@@ -152,6 +152,25 @@ def _mock_pick_available_slot() -> dict[str, str]:
     return {"appointment_hour": hour, "time_of_day": time_of_day}
 
 
+_TIME_SLOT_KEYS = ["time_slot", "appointment_hour", "time_of_day"]
+
+
+def _clear_stale_time_on_rejection(
+    state: SessionState, next_step_id: str | None, intent: str | None, new_slots: dict[str, str]
+) -> SessionState:
+    """Caller rejected the offered time (deny/change_time) without giving a
+    new one in the same utterance — clear the old time so the multi-slot
+    skip doesn't immediately bounce back to confirm_time_available and
+    re-read the SAME rejected offer verbatim. If the utterance already
+    carried a fresh time (e.g. "không, đổi sang 3 giờ chiều"), leave it —
+    that's the caller's new preference, not stale state."""
+    if next_step_id != "collect_time" or intent not in ("deny", "change_time"):
+        return state
+    if "time_of_day" in new_slots or "appointment_hour" in new_slots:
+        return state
+    return state.without_slots(_TIME_SLOT_KEYS)
+
+
 def _fill_time_slot_if_landing_unset(state: SessionState, next_step_id: str | None) -> SessionState:
     """Caller gave a date but never specified a time — mock-assign an
     available slot instead of making them guess an exact hour."""
@@ -243,6 +262,7 @@ def _process_with_match(
     next_step_id, _ = resolve_next_step(step, intent, state.slots, no_match_count)
     if next_step_id is not None:
         state = state.with_step(next_step_id)
+        state = _clear_stale_time_on_rejection(state, next_step_id, intent, new_slots)
         state = _fill_time_slot_if_landing_unset(state, next_step_id)
     else:
         state = state.increment_no_match(state.current_step_id)
@@ -330,6 +350,7 @@ def process_turn(
 
     if next_step_id is not None:
         state = state.with_step(next_step_id)
+        state = _clear_stale_time_on_rejection(state, next_step_id, intent, new_slots)
         state = _fill_time_slot_if_landing_unset(state, next_step_id)
     else:
         # Still within reprompt budget

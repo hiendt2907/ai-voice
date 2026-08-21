@@ -39,6 +39,9 @@ class SessionState:
     def with_slots(self, new_slots: dict[str, str]) -> "SessionState":
         return replace(self, slots={**self.slots, **new_slots})
 
+    def without_slots(self, keys: list[str]) -> "SessionState":
+        return replace(self, slots={k: v for k, v in self.slots.items() if k not in keys})
+
     def with_status(self, status: Literal["active", "handoff", "completed"]) -> "SessionState":
         return replace(self, status=status)
 
