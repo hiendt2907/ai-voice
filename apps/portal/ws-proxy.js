@@ -21,14 +21,49 @@ const port = parseInt(process.env.WS_PROXY_PORT, 10) || 3001
 // SIP bridge outside the cluster). Reuses the same env var other
 // in-cluster callers already use (see deploy/k8s/config/configmap.yaml).
 const voiceInternalUrl = process.env.VOICE_WORKER_URL || 'http://voice:8000'
+// This route is reachable on the public Ingress (aivoice.asia/ws/call) so
+// the browser-based Simulator can reach it same-origin — but /ws/call
+// itself drives a real call (real LLM/TTS spend, no auth of its own), so
+// unlike the Mac-side SIP bridge (kept Tailscale-only, never public) this
+// MUST gate on the caller actually being a logged-in Portal user.
+const apiInternalUrl = process.env.API_INTERNAL_URL || 'http://localhost:3001'
+
+function extractCookie(cookieHeader, name) {
+  if (!cookieHeader) return null
+  for (const part of cookieHeader.split(';')) {
+    const [k, ...rest] = part.trim().split('=')
+    if (k === name) return decodeURIComponent(rest.join('='))
+  }
+  return null
+}
+
+async function isAuthenticated(req) {
+  const token = extractCookie(req.headers.cookie, 'access_token')
+  if (!token) return false
+  try {
+    const res = await fetch(`${apiInternalUrl}/api/v1/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return res.ok
+  } catch (err) {
+    console.error('[ws-proxy] auth check failed:', err.message)
+    return false
+  }
+}
 
 const server = http.createServer((_req, res) => {
   res.writeHead(426, { 'Content-Type': 'text/plain' })
   res.end('This endpoint only accepts WebSocket upgrades.')
 })
 
-server.on('upgrade', (req, clientSocket, head) => {
+server.on('upgrade', async (req, clientSocket, head) => {
   if (!req.url || !req.url.startsWith('/ws/call')) {
+    clientSocket.destroy()
+    return
+  }
+
+  if (!(await isAuthenticated(req))) {
+    clientSocket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
     clientSocket.destroy()
     return
   }
