@@ -22,6 +22,10 @@ ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 COPY --from=build /repo/apps/portal/.next/standalone ./
 COPY --from=build /repo/apps/portal/.next/static ./apps/portal/.next/static
-COPY apps/portal/custom-server.js ./apps/portal/custom-server.js
-EXPOSE 3000
-CMD ["node", "apps/portal/custom-server.js"]
+COPY apps/portal/ws-proxy.js ./apps/portal/ws-proxy.js
+EXPOSE 3000 3001
+# Two processes: Next's own generated server.js (unchanged) on :3000, and a
+# plain-Node WS proxy for /ws/call on :3001 — see ws-proxy.js docstring for
+# why it isn't wired into Next's server directly. `wait -n` exits (and lets
+# k8s restart the container) if either process dies.
+CMD ["bash", "-c", "node apps/portal/server.js & node apps/portal/ws-proxy.js & wait -n"]

@@ -37,10 +37,10 @@ interface TurnMeta {
   filler: string
 }
 
-// Same-origin as the Portal page itself — the custom Next.js server
-// (apps/portal/custom-server.js) proxies /ws/call to the voice worker's
-// in-cluster ClusterIP, since Portal and voice run in the same k8s
-// namespace and the browser has no direct route to voice's internal DNS.
+// Same-origin as the Portal page itself — a sidecar WS proxy process
+// (apps/portal/ws-proxy.js, routed by the Ingress at /ws/call) forwards
+// to the voice worker's in-cluster ClusterIP, since Portal and voice run
+// in the same k8s namespace but the browser has no direct route to it.
 function resolveVoiceWsUrl(): string {
   if (typeof window === 'undefined') return ''
   const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:'

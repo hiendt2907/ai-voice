@@ -13,6 +13,15 @@ spec:
     - host: aivoice.asia
       http:
         paths:
+          # Portal Simulator's browser-side WS client (same-origin, avoids
+          # needing voice worker exposed anywhere) — see apps/portal/ws-proxy.js.
+          - path: /ws/call
+            pathType: Prefix
+            backend:
+              service:
+                name: portal
+                port:
+                  number: 3001
           - path: /
             pathType: Prefix
             backend:
