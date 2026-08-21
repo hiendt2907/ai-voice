@@ -283,14 +283,37 @@ class TurnOrchestrator:
             if rag_answered:
                 step = self.ctx.steps.get(self.state.current_step_id, {})
                 no_match = self.state.get_no_match_count(self.state.current_step_id)
+                rag_answer_text = self._last_rag.answer if self._last_rag is not None else ""
                 await self._stream_step(step, dict(self.state.slots), no_match, t_start)
+                # This turn was fully answered by _fsm_rag_intercept — it
+                # never goes through the trace-building path below (that
+                # `return` a few lines down skips it entirely), so without
+                # this the turn had NO metadata at all, and _last_rag stayed
+                # set until whatever turn happened to run _finish_trace()
+                # next — silently attaching this turn's RAG hit to a LATER,
+                # unrelated turn (found by cross-checking real call
+                # glassbox data: a KB-answered turn's persisted metadata
+                # belonged to the FOLLOWING turn, off by one for the rest
+                # of the call).
+                trace.step_from = step_from
+                trace.step_to = self.state.current_step_id
+                trace.agent_text = f"{rag_answer_text} {_render_step_text(step, dict(self.state.slots))}".strip()
+                trace.tts_engine = self.ctx.tts_engine_name
+                await self._finish_trace(trace, t_start)
                 self.tts_active = False
                 return
-        elif result.next_step_id is not None and _QUESTION_RE.search(utterance):
+        rag_prefix = ""
+        if result.next_step_id is not None and _QUESTION_RE.search(utterance):
             # FSM DID transition, but the utterance also contains a question
             # (e.g. "hôm nay còn giờ nào trống") — answer it first, then
-            # stream the next FSM step.
-            await self._fsm_rag_intercept(utterance, t_start)
+            # stream the next FSM step. _fsm_rag_intercept sets
+            # self._last_rag on a hit; _finish_trace() below still consumes
+            # it for the rag.* fields correctly (no leak here, since this
+            # trace does get finished this same turn) — but agent_text was
+            # being silently overwritten with only the FSM step's own text,
+            # dropping the RAG answer actually spoken moments earlier.
+            if await self._fsm_rag_intercept(utterance, t_start) and self._last_rag is not None:
+                rag_prefix = self._last_rag.answer
 
         if result.next_step_id is not None:
             step = self.ctx.steps.get(result.next_step_id, {})
@@ -325,7 +348,8 @@ class TurnOrchestrator:
         trace.step_from = step_from
         trace.step_to = step.get("id", self.state.current_step_id)
         trace.slots_new = dict(result.slots)
-        trace.agent_text = _render_step_text(step, dict(self.state.slots))
+        _step_text = _render_step_text(step, dict(self.state.slots))
+        trace.agent_text = f"{rag_prefix} {_step_text}".strip() if rag_prefix else _step_text
         trace.tts_engine = self.ctx.tts_engine_name
         trace.escalated = result.is_handoff
         await self._finish_trace(trace, t_start)
