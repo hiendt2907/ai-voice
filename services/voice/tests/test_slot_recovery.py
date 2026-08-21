@@ -207,3 +207,103 @@ class TestSlotRecoveryIntegration:
 
         assert result.next_step_id is None
         assert "appointment_date" not in result.state.slots
+
+
+# ── Multi-slot skip must not depend on the CURRENT turn adding new slots ────
+#
+# Bug found via real-call testing: caller volunteers name+phone while
+# answering an unrelated confirm question ("Tôi tên A, sđt ..." in reply to
+# "đặt luôn nhé?"). Those slots land in state.slots but the FSM stays on the
+# confirm step (intent didn't resolve confirm/deny). Two turns later the
+# caller says "Dạ đúng." — intent=confirm fires, step advances to
+# collect_contact — but that turn's own nlu_result.slots is empty, so the
+# multi-slot-skip that should carry the FSM straight past collect_contact
+# (since patient_name/phone are already filled) must not be gated on this
+# turn's slots, only on the cumulative state.
+
+CONTACT_SCRIPT = {
+    "id": "contact-script",
+    "entry_step": "confirm_booking",
+    "steps": [
+        {
+            "id": "confirm_booking",
+            "type": "speak_listen",
+            "variants": [{"id": "v1", "beats": [{"text": "Đặt luôn nhé?", "pause_after": "turn"}]}],
+            "reprompt_variants": [{"id": "r1", "beats": [{"text": "R1", "pause_after": "turn"}]}],
+            "transitions": [{"when": "intent == 'confirm'", "goto": "collect_contact"}],
+            "fallback_goto": "handoff_to_staff",
+            "max_no_match": 3,
+        },
+        {
+            "id": "collect_contact",
+            "type": "speak_listen",
+            "variants": [{"id": "v1", "beats": [{"text": "Cho xin tên và SĐT ạ.", "pause_after": "turn"}]}],
+            "reprompt_variants": [{"id": "r1", "beats": [{"text": "R1", "pause_after": "turn"}]}],
+            "transitions": [
+                {"when": "slot.patient_name != null && slot.patient_phone != null", "goto": "done"},
+            ],
+            "fallback_goto": "handoff_to_staff",
+            "max_no_match": 3,
+        },
+        {
+            "id": "done",
+            "type": "speak",
+            "variants": [{"id": "v1", "beats": [{"text": "Xong.", "pause_after": "long"}]}],
+        },
+        {
+            "id": "handoff_to_staff",
+            "type": "handoff",
+            "variants": [{"id": "v1", "beats": [{"text": "Chuyển nhân viên.", "pause_after": "long"}]}],
+        },
+    ],
+    "intents": [
+        {"intent": "confirm", "examples": [{"text": "đúng rồi"}]},
+        {"intent": "deny", "examples": [{"text": "không phải"}]},
+    ],
+}
+
+
+class TestMultiSlotSkipNotGatedOnCurrentTurnSlots:
+    async def test_skips_collect_contact_when_slots_were_filled_two_turns_earlier(self):
+        state = create_session(CONTACT_SCRIPT)
+
+        # Turn A: caller volunteers name+phone while answering the confirm
+        # question — intent doesn't resolve (off-topic reply), but the regex
+        # extractor (called unconditionally inside resolve()) still picks up
+        # the slots.
+        early_slots = NluResult(
+            intent=None,
+            slots={"patient_name": "Nguyễn Văn A", "patient_phone": "0901234567"},
+            confidence=0.3,
+            tier="clarify",
+        )
+        with (
+            patch("nlu.intent_resolver.resolve", return_value=early_slots),
+            patch("rag.embedder.embed_query", return_value=[0.0]),
+            patch("api.config.Settings") as mock_settings,
+        ):
+            mock_settings.return_value.use_llm_nlu = False
+            early_result = await async_process_turn(
+                state, CONTACT_SCRIPT, "Tôi tên Nguyễn Văn A, số điện thoại 0901234567."
+            )
+        state = early_result.state
+        assert state.current_step_id == "confirm_booking"  # still stuck — intent didn't resolve
+        assert state.slots.get("patient_name") == "Nguyễn Văn A"
+        assert state.slots.get("patient_phone") == "0901234567"
+
+        # Turn B: caller just confirms — this turn's own nlu_result.slots is
+        # empty, but state.slots (cumulative) already satisfies collect_contact.
+        confirm_only = NluResult(intent="confirm", slots={}, confidence=0.99, tier="confident")
+        with (
+            patch("nlu.intent_resolver.resolve", return_value=confirm_only),
+            patch("rag.embedder.embed_query", return_value=[0.0]),
+            patch("api.config.Settings") as mock_settings,
+        ):
+            mock_settings.return_value.use_llm_nlu = False
+            result = await async_process_turn(state, CONTACT_SCRIPT, "Dạ đúng.")
+
+        assert result.state.current_step_id == "done", (
+            "multi-slot skip must fire off cumulative state.slots, not this turn's "
+            "empty nlu_result.slots — otherwise the caller gets asked to repeat "
+            "info they already gave"
+        )

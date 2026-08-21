@@ -429,8 +429,12 @@ async def async_process_turn(
         import dataclasses as _dc  # noqa: PLC0415
         result = _dc.replace(result, nlu_confidence=nlu_result.confidence, nlu_tier=nlu_result.tier)
 
-        # Phase E: advance past steps whose slots are now filled (multi-slot)
-        if nlu_result.slots and result.next_step_id is not None:
+        # Phase E: advance past steps whose slots are now filled (multi-slot).
+        # Must NOT gate on this turn's nlu_result.slots — _advance_past_filled_steps
+        # checks cumulative state.slots, so a slot filled several turns ago (e.g.
+        # caller volunteers name+phone early, then just says "đúng" later) still
+        # needs this to run even though the current turn added nothing new.
+        if result.next_step_id is not None:
             steps = _step_index(script_body)
             advanced_state = _advance_past_filled_steps(result.state, steps)
             if advanced_state.current_step_id != result.state.current_step_id:
