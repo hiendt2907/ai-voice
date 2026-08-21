@@ -88,6 +88,17 @@ class TestExtractSlots:
         slots = extract_slots("số điện thoại của tôi là 0901234567")
         assert slots["patient_phone"] == "0901234567"
 
+    def test_phone_with_spaces(self):
+        """Real bug found via a 95-call batch test: ~23% of collect_phone
+        visits needed a second attempt, almost entirely because a
+        correctly-stated grouped-digit number was rejected outright."""
+        slots = extract_slots("số của tôi là 0938 111 222")
+        assert slots["patient_phone"] == "0938111222"
+
+    def test_phone_with_dashes(self):
+        slots = extract_slots("090-111-2222 đây")
+        assert slots["patient_phone"] == "0901112222"
+
     def test_specialty_long_phrase_priority(self):
         slots = extract_slots("muốn khám nội soi tiêu hóa")
         assert slots["specialty"] == "Nội soi - Tiêu hóa"

@@ -314,9 +314,15 @@ def extract_slots(utterance: str) -> dict[str, str]:
                 break
 
     # ── Phone ────────────────────────────────────────────────────────────────
-    phone_m = re.search(r"(?<!\d)(0[3-9]\d{8})(?!\d)", utterance)
+    # Tolerates the common ways people actually say/type a phone number —
+    # grouped with spaces, dots, or dashes ("090 111 2222", "090-111-2222")
+    # — not just bare contiguous digits. Found via a 95-call batch test:
+    # ~23% of collect_phone visits needed a second attempt, almost entirely
+    # because a correctly-stated number in a grouped format was rejected
+    # outright. Normalizes to a clean 10-digit string either way.
+    phone_m = re.search(r"(?<!\d)(0[3-9](?:[\s.-]?\d){8})(?!\d)", utterance)
     if phone_m:
-        slots["patient_phone"] = phone_m.group(1)
+        slots["patient_phone"] = re.sub(r"[\s.-]", "", phone_m.group(1))
 
     # ── Bare Vietnamese name fallback ─────────────────────────────────────────
     # When utterance is 2-4 words all starting with actual capital letters,
