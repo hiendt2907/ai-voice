@@ -152,6 +152,16 @@ def _mock_pick_available_slot() -> dict[str, str]:
     return {"appointment_hour": hour, "time_of_day": time_of_day}
 
 
+def _fill_time_slot_if_landing_unset(state: SessionState, next_step_id: str | None) -> SessionState:
+    """Caller gave a date but never specified a time — mock-assign an
+    available slot instead of making them guess an exact hour."""
+    if next_step_id != "confirm_time_available" or state.slots.get("time_slot"):
+        return state
+    state = state.with_slots(_mock_pick_available_slot())
+    derived = _recompute_derived_slots(dict(state.slots))
+    return state.with_slots(derived) if derived else state
+
+
 def create_session(script_body: dict) -> SessionState:
     now = datetime.now()
     tomorrow = now + timedelta(days=1)
@@ -233,6 +243,7 @@ def _process_with_match(
     next_step_id, _ = resolve_next_step(step, intent, state.slots, no_match_count)
     if next_step_id is not None:
         state = state.with_step(next_step_id)
+        state = _fill_time_slot_if_landing_unset(state, next_step_id)
     else:
         state = state.increment_no_match(state.current_step_id)
 
@@ -319,14 +330,7 @@ def process_turn(
 
     if next_step_id is not None:
         state = state.with_step(next_step_id)
-        # Caller gave a date but never specified a time — mock-assign an
-        # available slot instead of making them guess an exact hour (see
-        # _mock_pick_available_slot docstring: placeholder for merchant API).
-        if next_step_id == "confirm_time_available" and not state.slots.get("time_slot"):
-            state = state.with_slots(_mock_pick_available_slot())
-            derived = _recompute_derived_slots(dict(state.slots))
-            if derived:
-                state = state.with_slots(derived)
+        state = _fill_time_slot_if_landing_unset(state, next_step_id)
     else:
         # Still within reprompt budget
         state = state.increment_no_match(state.current_step_id)
