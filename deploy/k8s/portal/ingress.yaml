@@ -13,9 +13,11 @@ spec:
     - host: aivoice.asia
       http:
         paths:
-          # Portal Simulator's browser-side WS client (same-origin, avoids
+          # Portal Simulator's browser-side WS clients (same-origin, avoids
           # needing voice worker exposed anywhere) — see apps/portal/ws-proxy.js.
-          - path: /ws/call
+          # Covers both /ws/call (drives a call) and /ws/watch/:phone
+          # (read-only live transcript fan-out for the voip24h dial feature).
+          - path: /ws
             pathType: Prefix
             backend:
               service:

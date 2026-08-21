@@ -81,6 +81,13 @@ class CallContext:
     stt_engine_name: str = ""
     tts_engine_name: str = ""
 
+    # Set once on START (ws.py) when Redis is reachable — reused by
+    # _finish_trace() to fan turn traces out to a live-watch channel
+    # (Portal Simulator's "real call" transcript view) keyed by caller
+    # number, since a dial-triggered call has no session_id known ahead of
+    # time. Not a resource this object owns — never closed here.
+    redis: Any = None
+
     def script_exec_mode(self) -> str:
         """Explicit field takes priority, then infer from legacy `type`."""
         explicit = self.script.get("execution_mode")

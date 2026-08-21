@@ -1,6 +1,6 @@
 import { Cpu } from 'lucide-react'
 import { serverFetch } from '@/lib/api/server'
-import { SimulatorClient } from './SimulatorClient'
+import { SimulatorTabs } from './SimulatorTabs'
 
 interface VersionSummary {
   id: string
@@ -65,7 +65,7 @@ export default async function SimulatorPage() {
           <p className="text-sm">Chưa có campaign nào. Tạo và publish một script trước.</p>
         </div>
       ) : (
-        <SimulatorClient campaigns={campaigns} />
+        <SimulatorTabs campaigns={campaigns} />
       )}
     </div>
   )

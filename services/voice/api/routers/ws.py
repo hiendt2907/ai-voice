@@ -215,6 +215,7 @@ async def call_ws(
         )
     except Exception:
         redis_for_chain = None  # type: ignore[assignment]
+    ctx.redis = redis_for_chain
 
     tts_chain: TTSChain | None = None
     if _settings.use_real_tts and redis_for_chain is not None:
@@ -478,6 +479,54 @@ async def call_ws(
         # explicitly so well-behaved clients can tell a normal end-of-call
         # apart from a real fault. Best-effort: the socket may already be
         # gone (e.g. WebSocketDisconnect path), so swallow errors here.
+        try:
+            await ws.close()
+        except Exception:
+            pass
+
+
+@router.websocket("/watch/{phone}")
+async def watch_call_ws(ws: WebSocket, phone: str) -> None:
+    """Live-watch a real voip24h call by caller number — Portal Simulator's
+    "gọi số thật" feature. Subscribes to the Redis channel call/turn.py
+    publishes to (call:live:{phone}) and relays every message verbatim to
+    whoever's watching. No session_id needed upfront since the dial
+    request only knows the phone number, not the session the SIP bridge
+    will mint once the call is answered.
+    """
+    await ws.accept()
+    try:
+        redis_client: aioredis.Redis = aioredis.from_url(  # type: ignore[type-arg]
+            _settings.redis_url, decode_responses=True
+        )
+    except Exception as exc:
+        logger.warning("watch_call_ws: Redis unavailable: %s", exc)
+        await ws.close(code=1011)
+        return
+
+    pubsub = redis_client.pubsub()
+    channel = f"call:live:{phone}"
+    await pubsub.subscribe(channel)
+    try:
+        async for message in pubsub.listen():
+            if message.get("type") != "message":
+                continue
+            try:
+                await ws.send_text(message["data"])
+            except Exception:
+                break
+    except Exception:
+        logger.debug("watch_call_ws: listener ended", exc_info=True)
+    finally:
+        try:
+            await pubsub.unsubscribe(channel)
+            await pubsub.close()
+        except Exception:
+            pass
+        try:
+            await redis_client.close()
+        except Exception:
+            pass
         try:
             await ws.close()
         except Exception:

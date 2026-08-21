@@ -373,8 +373,24 @@ class TurnOrchestrator:
             # Sent AFTER the beats so a live viewer lines the trace up with
             # the audio the caller is hearing.
             await self.egress.send({"event": "turn_trace", **trace.to_dict()})
+            await self._publish_live_watch({"event": "turn_trace", **trace.to_dict()})
         except Exception:
             logger.debug("turn trace emit failed", exc_info=True)
+
+    async def _publish_live_watch(self, payload: dict) -> None:
+        """Fan this call's events out to Portal's "watch a real call live"
+        view (Simulator's voip24h dial-a-number feature) — keyed by caller
+        number since a dial-triggered call has no session_id known to
+        Portal ahead of time. Best-effort: a Redis blip must never affect
+        the actual call."""
+        if self.ctx.redis is None or not self.ctx.caller_number:
+            return
+        try:
+            import json as _json  # noqa: PLC0415
+            channel = f"call:live:{self.ctx.caller_number}"
+            await self.ctx.redis.publish(channel, _json.dumps(payload, default=str))
+        except Exception:
+            logger.debug("live-watch publish failed", exc_info=True)
 
     async def _fsm_rag_intercept(self, utterance: str, t_start: float) -> bool:
         """Try RAG for mid-FSM questions. True = RAG answered (caller should
@@ -425,6 +441,7 @@ class TurnOrchestrator:
             else HangupPayload(step_id=step_id).to_dict()
         )
         await self.egress.send(payload)
+        await self._publish_live_watch({"event": reason, **payload})
         await self.egress.adapter.on_call_end(reason, self.ctx.session_id)
         self.call_ended.set()
 

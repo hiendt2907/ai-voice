@@ -57,7 +57,10 @@ const server = http.createServer((_req, res) => {
 })
 
 server.on('upgrade', async (req, clientSocket, head) => {
-  if (!req.url || !req.url.startsWith('/ws/call')) {
+  // /ws/call drives a real call (real LLM/TTS spend); /ws/watch/:phone is
+  // read-only fan-out of an already-running call's turn traces — both need
+  // a logged-in Portal user, neither should be reachable by anyone else.
+  if (!req.url || !(req.url.startsWith('/ws/call') || req.url.startsWith('/ws/watch/'))) {
     clientSocket.destroy()
     return
   }
