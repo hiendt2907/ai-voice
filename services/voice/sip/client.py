@@ -37,6 +37,10 @@ class SipCall:
     local_from: str = ""
     remote_to: str = ""
     remote_target: str = ""
+    # Transport address the INVITE actually came from. The BYE that ends the
+    # call has to go back *there*, not to the registered trunk — see
+    # SipPhone.hangup().
+    remote_addr: tuple[str, int] | None = None
     cseq: int = 0
 
     def flush_playback(self) -> None:
@@ -110,9 +114,10 @@ class SipPhone:
             self._transport.close()
 
     def _send(self, data: bytes) -> None:
-        """For requests *we* originate against our configured peer (REGISTER,
-        and the BYE we send to end a call we're in) — always the registered
-        server, correct by definition."""
+        """For requests *we* originate against our configured peer (REGISTER)
+        — always the registered server, correct by definition. In-dialog
+        requests such as BYE do NOT belong here; they are addressed to the
+        dialog's own peer via `_send_to`."""
         assert self._transport is not None
         self._transport.sendto(data, (self.server, self.port))
 
@@ -284,6 +289,7 @@ class SipPhone:
             local_from=to_header,
             remote_to=req.header("from") or "",
             remote_target=remote_target,
+            remote_addr=addr,
         )
         self._active_calls[req.call_id] = call
         logger.info("Call answered: call_id=%s caller=%s rtp_port=%d", req.call_id, caller_number, rtp_port)
@@ -307,7 +313,14 @@ class SipPhone:
             return
         call.cseq += 1
         try:
-            self._send(
+            # In-dialog request: it belongs to *this* call, so it goes to the
+            # address the INVITE arrived from — the same RFC 3261 rule that
+            # already applies to responses (`_send_to`). Sending it to the
+            # configured trunk instead only works while the caller happens to
+            # reach us through that exact address:port; for any other peer the
+            # BYE lands nowhere, the caller never learns the AI hung up, and
+            # the line stays open and silent until the carrier times it out.
+            self._send_to(
                 m.build_bye(
                     call_id=call_id,
                     from_header=call.local_from,
@@ -316,7 +329,8 @@ class SipPhone:
                     my_ip=self.my_ip,
                     my_port=self.sip_port,
                     cseq=call.cseq,
-                )
+                ),
+                call.remote_addr or (self.server, self.port),
             )
             logger.info("Sent BYE for call_id=%s", call_id)
         except Exception as exc:  # noqa: BLE001 — teardown must still run

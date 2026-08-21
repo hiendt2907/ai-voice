@@ -23,7 +23,12 @@ data:
   LLM_PROVIDER: "ollama"   # "ollama" == generic OpenAI-compatible client path
   LLM_BASE_URL: "https://api.xkiro.com/v1"
   LLM_MODEL: "qwen/qwen3.5-flash"
-  USE_LLM_NLU: "true"
+  # Off on GCP live (kubectl patch, 2026-08-20) — 242-example vector NLU
+  # dataset (P9) covers all script intents with 0 LLM calls per test call;
+  # LLM NLU tier adds ~2s latency for no accuracy gain right now. Flip to
+  # "true" only after confirming vector NLU is missing coverage for a real
+  # intent (check tier=clarify rate in glassbox turn traces first).
+  USE_LLM_NLU: "false"
 
   # STT stays on the Macbook inference server (faster-whisper) over Tailscale —
   # xKiro has no speech-to-text endpoint (/v1/audio/transcriptions returns 404
@@ -32,13 +37,16 @@ data:
   STT_ENGINE: "remote"
   TTS_ENGINE: "xkiro"
   USE_REAL_TTS: "true"
-  # Canary (2026-08-20): streaming STT validated round 1-4, see memory
-  # phase2-streaming-stt-not-ready — latency ≥ one-shot, crash not
-  # reproducible on stable env, fallback-while-WS-down confirmed with real
-  # audio. GCP is the only pre-production env (no live CloudFone traffic
-  # yet), so enabling here IS the canary. Watch pod logs for "degrading to
-  # HTTP" and error rate; flip back to "false" immediately on regression.
-  USE_STREAMING_STT: "true"
+  # OFF on GCP live (kubectl patch, 2026-08-20) — turned back off after the
+  # round-1-4 canary above. A/B on the same audio file (see memory
+  # streaming-stt-canary-enabled) proved Whisper hallucinates YouTube
+  # phrases during silence gaps at confidence 0.73 in streaming mode —
+  # false barge-ins + garbage fed to NLU. One-shot STT had zero
+  # hallucinations on the same test. Do NOT re-enable without first gating
+  # silence out of the streaming buffer before it reaches Whisper (VAD gate
+  # at the streaming layer, not just AudioPipeline), proven again with the
+  # --wav silence-gap test in CLAUDE.md.
+  USE_STREAMING_STT: "false"
   # Canary (2026-08-20): Silero VAD (stt/silero_vad.py, onnxruntime-only)
   # replacing bare RMS energy — validated with real recorded speech
   # (pytest, silence ~0.02 vs speech ~0.9-1.0 probability) and confirmed

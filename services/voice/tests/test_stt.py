@@ -259,3 +259,92 @@ def test_stt_result_emotion_field():
     from stt.faster_whisper_stt import STTResult
     result = STTResult(text="hello", confidence=0.9, is_final=True, emotion="happy")
     assert result.emotion == "happy"
+
+
+# ---------------------------------------------------------------------------
+# Whisper hallucination guards
+# ---------------------------------------------------------------------------
+
+
+class _Seg:
+    """Minimal stand-in for a faster-whisper Segment."""
+
+    def __init__(
+        self,
+        text: str,
+        no_speech_prob: float = 0.0,
+        compression_ratio: float = 1.0,
+        avg_logprob: float = -0.3,
+    ) -> None:
+        self.text = text
+        self.no_speech_prob = no_speech_prob
+        self.compression_ratio = compression_ratio
+        self.avg_logprob = avg_logprob
+
+
+def test_youtube_boilerplate_on_silence_is_dropped():
+    """Whisper answers a silent segment with its Vietnamese training prior and
+    reports ordinary confidence for it, so only no_speech_prob catches it."""
+    from stt.faster_whisper_stt import _is_hallucination
+
+    seg = _Seg(
+        "Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn",
+        no_speech_prob=0.78,
+        compression_ratio=0.89,
+        avg_logprob=-0.37,
+    )
+    assert _is_hallucination(seg) is True
+
+
+def test_short_real_reply_is_not_mistaken_for_silence():
+    """A half-second answer is padded out to Whisper's 30s window, so its
+    no_speech_prob (0.67 measured) looks like silence. Dropping on that number
+    ate real answers and stalled the FSM mid-booking."""
+    from stt.faster_whisper_stt import _is_hallucination
+
+    assert _is_hallucination(
+        _Seg("Đúng rồi.", no_speech_prob=0.67, compression_ratio=0.59, avg_logprob=-0.45)
+    ) is False
+    assert _is_hallucination(
+        _Seg("Ngày mai buổi sáng.", no_speech_prob=0.69, compression_ratio=0.71, avg_logprob=-0.75)
+    ) is False
+
+
+def test_boilerplate_below_the_silence_cutoff_is_still_dropped():
+    from stt.faster_whisper_stt import _is_hallucination
+
+    assert _is_hallucination(
+        _Seg("Cảm ơn các bạn.", no_speech_prob=0.5, avg_logprob=-0.5)
+    ) is True
+
+
+def test_short_repetition_loop_is_dropped():
+    """A short in-domain loop passes every numeric threshold and then matches
+    an intent the caller never expressed — the repetition itself is the tell."""
+    from stt.faster_whisper_stt import _is_hallucination
+
+    seg = _Seg("Đến lịch khám nội khoa, ngoại khoa, nhi khoa, nhi khoa, nhi khoa.")
+    assert _is_hallucination(seg) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Tôi muốn đặt lịch khám nội khoa.",
+        "Ngày mai buổi sáng.",
+        "chín giờ",
+        "không chín tám bảy sáu năm bốn ba hai một",
+        "cho tôi nói chuyện với nhân viên",
+        "Phòng khám nội soi dạ dày và sản phụ khoa ạ.",
+    ],
+)
+def test_real_utterances_survive_the_guards(text):
+    from stt.faster_whisper_stt import _is_hallucination
+
+    assert _is_hallucination(_Seg(text)) is False
+
+
+def test_guesswork_decode_is_dropped():
+    from stt.faster_whisper_stt import _is_hallucination
+
+    assert _is_hallucination(_Seg("gì đó", avg_logprob=-1.4)) is True
