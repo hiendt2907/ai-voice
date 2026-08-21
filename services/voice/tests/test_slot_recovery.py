@@ -135,6 +135,21 @@ class TestCorrectUtteranceWithContext:
         system_text = sent_messages[0]["content"]
         assert "ngày muốn khám" in system_text
 
+    async def test_date_vocab_hint_included_for_appointment_date(self):
+        """Without an explicit vocab list the model tends to leave phrasing
+        like "hai hôm nữa" unchanged instead of mapping it to "ngày mốt" —
+        confirmed by direct xKiro testing. The prompt must spell out the
+        exact keywords slot_extractor.py's regex understands."""
+        state = SessionState(session_id="s1", script_id="test-script", current_step_id="collect_date")
+        chat_mock = AsyncMock(return_value=json.dumps({"corrected_text": "ngày mốt"}))
+        with patch("nlu.llm_resolver._chat_json", new=chat_mock):
+            await correct_utterance_with_context(
+                "Hai hôm nữa nhé.", state, missing_slots=["appointment_date"]
+            )
+        system_text = chat_mock.call_args.args[0][0]["content"]
+        assert "ngày mốt" in system_text
+        assert "hôm nay" in system_text
+
 
 # ── runtime.executor.async_process_turn — integration ───────────────────────
 

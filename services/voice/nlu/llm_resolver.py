@@ -225,14 +225,14 @@ xuất được thông tin sau từ câu khách VỪA NÓI (dòng "user" cuối 
 Có hai khả năng, dựa vào TOÀN BỘ hội thoại bên dưới để phân biệt:
 1. STT nghe nhầm một từ tiếng Việt phổ thông thành từ gần âm — ví dụ "hôm nay" \
 bị nghe thành "hãy nay".
-2. Khách nói đúng, nhưng diễn đạt theo cách khác với mẫu câu hệ thống nhận \
-diện được — ví dụ "hai hôm nữa" thay vì "ngày mốt", hoặc trả lời gián tiếp \
-một câu hỏi trước đó.
-
-Hãy diễn giải lại câu khách VỪA NÓI thành câu chuẩn, rõ nghĩa, giữ đúng nội \
-dung khách đã nói — KHÔNG thêm thông tin khách chưa từng nhắc tới ở bất kỳ \
-đâu trong hội thoại. Chỉ sửa khi bạn tin chắc dựa trên ngữ cảnh đã có; nếu \
-không đủ căn cứ, giữ nguyên nguyên văn.
+2. Khách nói đúng, nhưng diễn đạt theo cách khác với từ khóa hệ thống nhận \
+diện được.
+{vocab_section}
+Dựa vào TOÀN BỘ hội thoại để hiểu đúng ý khách, rồi VIẾT LẠI câu khách VỪA NÓI \
+sao cho khớp với từ khóa/mẫu câu hệ thống hiểu được ở trên (nếu có liên quan) \
+— giữ nguyên đúng nội dung khách đã nói, KHÔNG suy đoán hay thêm thông tin \
+khách chưa từng nhắc tới ở bất kỳ đâu trong hội thoại. Chỉ sửa khi bạn tin \
+chắc dựa trên ngữ cảnh đã có; nếu không đủ căn cứ, giữ nguyên nguyên văn.
 
 Chỉ trả JSON, không giải thích: {{"corrected_text":"..."}}
 """
@@ -246,9 +246,30 @@ _SLOT_DESCRIPTIONS_VN = {
     "specialty": "chuyên khoa muốn khám",
 }
 
+# Only date/time slots have a closed keyword vocabulary the regex extractor
+# understands — must match runtime/../nlu/slot_extractor.py's actual patterns,
+# not a paraphrase of them, or the model will "correct" into a form the regex
+# still can't parse (see: qwen3.5-flash tested "hai hôm nữa" → left unchanged
+# without this, and only produced "ngày mốt" once given this exact list).
+_SLOT_VOCAB_HINTS = {
+    "appointment_date": (
+        'Bộ trích xuất chỉ hiểu ĐÚNG các từ khóa sau cho ngày: "hôm nay", '
+        '"ngày mai", "ngày mốt"/"ngày kia" (2 ngày kể từ hôm nay), "tuần sau", '
+        'tên thứ trong tuần ("thứ Hai".."Chủ Nhật"), hoặc ngày/tháng dạng số '
+        '(vd "20/8", "ngày 20 tháng 8"). Ví dụ: "hai hôm nữa", "còn 2 bữa nữa" '
+        '→ đều là "ngày mốt".'
+    ),
+    "time_of_day": 'Bộ trích xuất chỉ hiểu "sáng", "chiều", "tối".',
+}
+
 
 def _describe_slots(slot_names: list[str]) -> str:
     return ", ".join(_SLOT_DESCRIPTIONS_VN.get(s, s) for s in slot_names)
+
+
+def _vocab_section(slot_names: list[str]) -> str:
+    hints = [_SLOT_VOCAB_HINTS[s] for s in slot_names if s in _SLOT_VOCAB_HINTS]
+    return "\n" + "\n".join(hints) + "\n" if hints else ""
 
 
 async def correct_utterance_with_context(
@@ -268,7 +289,10 @@ async def correct_utterance_with_context(
     in the system — nothing generated here is ever spoken.
     """
     slot_desc = _describe_slots(missing_slots) if missing_slots else "thông tin còn thiếu"
-    system_content = _SYSTEM_TEMPLATE_STT_CORRECT.format(slot_desc=slot_desc)
+    vocab_section = _vocab_section(missing_slots) if missing_slots else ""
+    system_content = _SYSTEM_TEMPLATE_STT_CORRECT.format(
+        slot_desc=slot_desc, vocab_section=vocab_section
+    )
     messages: list[dict] = [{"role": "system", "content": system_content}]
     for entry in state.transcript:
         if entry.role == "agent":
