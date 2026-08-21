@@ -4,9 +4,15 @@ metadata:
   name: voice
   namespace: ai-voice
 spec:
+  # NodePort so the Mac-side SIP softphone can reach ws/call directly over
+  # Tailscale (node's tailscale0 IP) instead of `kubectl port-forward` every
+  # session. GCP firewall has no rule opening the NodePort range publicly —
+  # only reachable via the internal VPC or the Tailscale overlay.
+  type: NodePort
   selector:
     app: voice
   ports:
     - name: http
       port: 8000
       targetPort: 8000
+      nodePort: 30800
