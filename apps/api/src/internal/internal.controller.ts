@@ -7,6 +7,7 @@ import { SettingsService } from '../settings/settings.service'
 import { KnowledgeService } from '../knowledge/knowledge.service'
 import { LearningService } from '../learning/learning.service'
 import { NluService } from '../nlu/nlu.service'
+import { ScriptsService } from '../scripts/scripts.service'
 
 class CallEndedDto {
   @IsString()
@@ -95,7 +96,14 @@ export class InternalController {
     private readonly knowledgeService: KnowledgeService,
     private readonly learningService: LearningService,
     private readonly nluService: NluService,
+    private readonly scriptsService: ScriptsService,
   ) {}
+
+  @Get('scripts/:campaignId/active')
+  @ApiOperation({ summary: 'Get the published script body for a campaign — service-to-service (no auth)' })
+  getActiveScript(@Param('campaignId') campaignId: string) {
+    return this.scriptsService.getActiveScript(campaignId)
+  }
 
   @Get('knowledge/rag-export')
   @ApiOperation({ summary: 'Export KB articles with embeddings — service-to-service (no auth)' })

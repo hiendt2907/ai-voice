@@ -49,6 +49,27 @@ router = APIRouter(prefix="/ws", tags=["websocket"])
 _settings = Settings()
 
 
+async def _fetch_active_script(campaign_id: str) -> dict | None:  # type: ignore[type-arg]
+    """Fetch the published script body for a campaign from the Script CMS.
+
+    This is what actually wires the Portal's draft/review/publish/lint/audit
+    flow into real calls — without it, publish state is decorative: callers
+    would fall back to whatever local JSON file the SIP bridge happens to
+    have on disk, bypassing HITL review entirely. Same internal-endpoint
+    pattern as nlu/store.py's reload_from_api (no auth, service-to-service).
+    """
+    url = f"{_settings.api_url}/internal/scripts/{campaign_id}/active"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            version = resp.json()
+            return version.get("body")
+    except Exception as exc:
+        logger.warning("Failed to fetch published script for campaign=%s: %s", campaign_id, exc)
+        return None
+
+
 def _load_script_file(name_or_path: str) -> dict:  # type: ignore[type-arg]
     """Load a script JSON by name from scripts/examples/ or by path.
 
@@ -286,6 +307,10 @@ async def call_ws(
                 ctx.caller_number = start.caller_number
                 ctx.caller_direction = start.direction
                 ctx.script = raw.get("script", {})
+                if not ctx.script and ctx.campaign_id:
+                    fetched = await _fetch_active_script(ctx.campaign_id)
+                    if fetched:
+                        ctx.script = fetched
                 if not ctx.script and script_id:
                     try:
                         ctx.script = _load_script_file(script_id)

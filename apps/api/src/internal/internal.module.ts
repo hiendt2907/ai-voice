@@ -8,9 +8,10 @@ import { SettingsModule } from '../settings/settings.module'
 import { KnowledgeModule } from '../knowledge/knowledge.module'
 import { LearningModule } from '../learning/learning.module'
 import { NluModule } from '../nlu/nlu.module'
+import { ScriptsModule } from '../scripts/scripts.module'
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ServiceApiKey]), CallsModule, CallbacksModule, SettingsModule, KnowledgeModule, LearningModule, NluModule],
+  imports: [TypeOrmModule.forFeature([ServiceApiKey]), CallsModule, CallbacksModule, SettingsModule, KnowledgeModule, LearningModule, NluModule, ScriptsModule],
   controllers: [InternalController],
 })
 export class InternalModule {}

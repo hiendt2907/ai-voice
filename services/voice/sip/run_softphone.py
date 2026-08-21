@@ -6,7 +6,10 @@ Usage:
     uv run python -m sip.run_softphone \\
         --sip-server 222.255.115.80 --sip-user 642 --sip-password '...' \\
         --ws-url ws://127.0.0.1:8000/ws/call \\
-        --script scripts/examples/booking_inbound_v1.json
+        --campaign-id <published-campaign-uuid>
+
+    # Or explicit local-file override (bypasses Script CMS publish state):
+    uv run python -m sip.run_softphone ... --script scripts/examples/booking_inbound_v1.json
 """
 
 from __future__ import annotations
@@ -34,7 +37,11 @@ def _detect_local_ip(probe_host: str, probe_port: int) -> str:
 
 
 async def _run(args: argparse.Namespace) -> None:
-    script = json.loads(Path(args.script).read_text(encoding="utf-8"))
+    # Prefer --campaign-id (server resolves the published script from the
+    # Script CMS via /internal/scripts/:campaignId/active — see ws.py) so
+    # calls actually honor publish/review/lint state. --script stays as an
+    # explicit local-file override for offline dev iteration before publish.
+    script = json.loads(Path(args.script).read_text(encoding="utf-8")) if args.script else {}
     my_ip = args.my_ip or _detect_local_ip(args.sip_server, args.sip_port)
     logger.info("Local IP for SIP/RTP: %s", my_ip)
 
@@ -85,8 +92,17 @@ def main() -> None:
     parser.add_argument("--rtp-port-low", type=int, default=20000)
     parser.add_argument("--rtp-port-high", type=int, default=20010)
     parser.add_argument("--ws-url", required=True, help="e.g. ws://127.0.0.1:8000/ws/call")
-    parser.add_argument("--script", required=True, help="Path to a call-script JSON file")
-    parser.add_argument("--campaign-id", default=None)
+    parser.add_argument(
+        "--script", default=None,
+        help="Path to a local call-script JSON file. Explicit override — skips the "
+             "Script CMS entirely, so publish/review state has no effect. Omit this "
+             "and pass --campaign-id instead for calls to use the actually-published "
+             "script.",
+    )
+    parser.add_argument(
+        "--campaign-id", default=None,
+        help="Campaign to resolve the published script from (required if --script is omitted).",
+    )
     parser.add_argument(
         "--pre-roll-s", type=float, default=0.0,
         help="Seconds to wait after answer before bridging. Off by default; the "
@@ -95,6 +111,8 @@ def main() -> None:
     )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
+    if not args.script and not args.campaign_id:
+        parser.error("one of --script or --campaign-id is required")
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
     asyncio.run(_run(args))
