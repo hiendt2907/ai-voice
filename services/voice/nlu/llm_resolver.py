@@ -219,20 +219,44 @@ async def resolve_with_llm(
 
 
 _SYSTEM_TEMPLATE_STT_CORRECT = """\
-Bạn đang xem transcript một cuộc gọi tới phòng khám. STT đôi khi nghe nhầm \
-một từ tiếng Việt phổ thông (không phải thuật ngữ y khoa) thành từ gần âm, \
-ví dụ "hôm nay" bị nghe thành "hãy nay".
+Bạn đang xem transcript một cuộc gọi tới phòng khám. Hệ thống vừa không trích \
+xuất được thông tin sau từ câu khách VỪA NÓI (dòng "user" cuối cùng): {slot_desc}.
 
-Dựa vào TOÀN BỘ hội thoại bên dưới để hiểu ngữ cảnh (AI vừa hỏi gì), hãy đoán \
-lại câu khách VỪA NÓI (dòng "user" cuối cùng). Chỉ sửa từ mà bạn tin chắc bị \
-nghe nhầm dựa trên ngữ cảnh; nếu không chắc, giữ nguyên nguyên văn.
+Có hai khả năng, dựa vào TOÀN BỘ hội thoại bên dưới để phân biệt:
+1. STT nghe nhầm một từ tiếng Việt phổ thông thành từ gần âm — ví dụ "hôm nay" \
+bị nghe thành "hãy nay".
+2. Khách nói đúng, nhưng diễn đạt theo cách khác với mẫu câu hệ thống nhận \
+diện được — ví dụ "hai hôm nữa" thay vì "ngày mốt", hoặc trả lời gián tiếp \
+một câu hỏi trước đó.
 
-Chỉ trả JSON, không giải thích: {"corrected_text":"..."}
+Hãy diễn giải lại câu khách VỪA NÓI thành câu chuẩn, rõ nghĩa, giữ đúng nội \
+dung khách đã nói — KHÔNG thêm thông tin khách chưa từng nhắc tới ở bất kỳ \
+đâu trong hội thoại. Chỉ sửa khi bạn tin chắc dựa trên ngữ cảnh đã có; nếu \
+không đủ căn cứ, giữ nguyên nguyên văn.
+
+Chỉ trả JSON, không giải thích: {{"corrected_text":"..."}}
 """
 
+_SLOT_DESCRIPTIONS_VN = {
+    "appointment_date": "ngày muốn khám",
+    "time_of_day": "buổi trong ngày (sáng/chiều/tối)",
+    "appointment_hour": "giờ muốn khám",
+    "patient_name": "họ tên khách",
+    "patient_phone": "số điện thoại khách",
+    "specialty": "chuyên khoa muốn khám",
+}
 
-async def correct_utterance_with_context(utterance: str, state: SessionState) -> str:
-    """Best-effort STT correction using the *full* conversation transcript.
+
+def _describe_slots(slot_names: list[str]) -> str:
+    return ", ".join(_SLOT_DESCRIPTIONS_VN.get(s, s) for s in slot_names)
+
+
+async def correct_utterance_with_context(
+    utterance: str, state: SessionState, missing_slots: list[str] | None = None
+) -> str:
+    """Best-effort re-phrasing of the caller's last utterance using the *full*
+    conversation transcript — covers both STT mishearing AND phrasing the
+    regex extractor doesn't recognize even when STT heard it correctly.
 
     Used only as a slot-recovery retry when a step's required slot came back
     empty from the regex extractor — never to answer the caller directly, so
@@ -243,7 +267,9 @@ async def correct_utterance_with_context(utterance: str, state: SessionState) ->
     call with full history despite the "don't fabricate" guardrail elsewhere
     in the system — nothing generated here is ever spoken.
     """
-    messages: list[dict] = [{"role": "system", "content": _SYSTEM_TEMPLATE_STT_CORRECT}]
+    slot_desc = _describe_slots(missing_slots) if missing_slots else "thông tin còn thiếu"
+    system_content = _SYSTEM_TEMPLATE_STT_CORRECT.format(slot_desc=slot_desc)
+    messages: list[dict] = [{"role": "system", "content": system_content}]
     for entry in state.transcript:
         if entry.role == "agent":
             messages.append({"role": "assistant", "content": entry.text})

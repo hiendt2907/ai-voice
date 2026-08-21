@@ -120,6 +120,21 @@ class TestCorrectUtteranceWithContext:
             result = await correct_utterance_with_context("Hãy nay buổi sáng.", state)
         assert result == "Hãy nay buổi sáng."
 
+    async def test_missing_slots_named_in_system_prompt(self):
+        """The prompt must target the slot that's actually missing, not a
+        generic 'fix mishearing' instruction — otherwise the LLM has no way
+        to distinguish an STT error from valid phrasing regex just doesn't
+        cover."""
+        state = SessionState(session_id="s1", script_id="test-script", current_step_id="collect_date")
+        chat_mock = AsyncMock(return_value=json.dumps({"corrected_text": "Hai hôm nữa."}))
+        with patch("nlu.llm_resolver._chat_json", new=chat_mock):
+            await correct_utterance_with_context(
+                "Hai bữa nữa.", state, missing_slots=["appointment_date"]
+            )
+        sent_messages = chat_mock.call_args.args[0]
+        system_text = sent_messages[0]["content"]
+        assert "ngày muốn khám" in system_text
+
 
 # ── runtime.executor.async_process_turn — integration ───────────────────────
 

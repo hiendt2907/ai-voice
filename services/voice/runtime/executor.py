@@ -399,7 +399,7 @@ async def async_process_turn(
                 from nlu.llm_resolver import correct_utterance_with_context  # noqa: PLC0415
                 from nlu.slot_extractor import extract_slots as _retry_extract_slots  # noqa: PLC0415
 
-                corrected = await correct_utterance_with_context(utterance, state)
+                corrected = await correct_utterance_with_context(utterance, state, _missing_slots)
                 if corrected != utterance:
                     retried_slots = _retry_extract_slots(corrected)
                     recovered = {
