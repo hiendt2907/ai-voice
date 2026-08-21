@@ -11,6 +11,7 @@ click-to-call flow (ring extension → bridge to a phone number) needs.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -30,6 +31,13 @@ class SipCall:
     call_id: str
     caller_number: str
     rtp: RtpSession
+    # Dialog identifiers captured from the INVITE / our 200 OK, needed to
+    # send a well-formed BYE when *we* end the call (UAS role: our tag is in
+    # From, theirs in To — the mirror image of the INVITE).
+    local_from: str = ""
+    remote_to: str = ""
+    remote_target: str = ""
+    cseq: int = 0
 
     def flush_playback(self) -> None:
         self.rtp.flush_playback()
@@ -237,15 +245,66 @@ class SipPhone:
         from_header = req.header("from") or ""
         caller_number = ""
         if 'sip:' in (req.header("from") or ""):
-            try:
+            with contextlib.suppress(IndexError):
                 caller_number = from_header.split("sip:")[1].split("@")[0]
-            except IndexError:
-                pass
 
-        call = SipCall(call_id=req.call_id, caller_number=caller_number, rtp=rtp)
+        to_header = req.header("to") or ""
+        if "tag=" not in to_header:
+            to_header = f"{to_header};tag={local_tag}"
+        contact = req.header("contact") or ""
+        remote_target = ""
+        if "<" in contact and ">" in contact:
+            remote_target = contact.split("<", 1)[1].split(">", 1)[0]
+        elif contact:
+            remote_target = contact.strip()
+        if not remote_target and "sip:" in from_header:
+            remote_target = "sip:" + from_header.split("sip:", 1)[1].split(">")[0].split(";")[0]
+
+        call = SipCall(
+            call_id=req.call_id,
+            caller_number=caller_number,
+            rtp=rtp,
+            local_from=to_header,
+            remote_to=req.header("from") or "",
+            remote_target=remote_target,
+        )
         self._active_calls[req.call_id] = call
         logger.info("Call answered: call_id=%s caller=%s rtp_port=%d", req.call_id, caller_number, rtp_port)
-        await self._on_call_start(call)
+        try:
+            await self._on_call_start(call)
+        finally:
+            # The bridge returning means the AI side is done with this call
+            # (hangup/handoff, or the WS dropped). Nothing used to hang up
+            # the SIP leg in that case, so the caller sat on an open, silent
+            # line until the carrier timed the call out.
+            await self.hangup(req.call_id)
+
+    async def hangup(self, call_id: str) -> None:
+        """End a call we're still in by sending BYE, then tear it down.
+
+        No-op if the call is already gone (the common case when the *caller*
+        hung up first — we got their BYE and cleaned up in `_end_call`).
+        """
+        call = self._active_calls.get(call_id)
+        if call is None:
+            return
+        call.cseq += 1
+        try:
+            self._send(
+                m.build_bye(
+                    call_id=call_id,
+                    from_header=call.local_from,
+                    to_header=call.remote_to,
+                    request_uri=call.remote_target,
+                    my_ip=self.my_ip,
+                    my_port=self.sip_port,
+                    cseq=call.cseq,
+                )
+            )
+            logger.info("Sent BYE for call_id=%s", call_id)
+        except Exception as exc:  # noqa: BLE001 — teardown must still run
+            logger.warning("Failed to send BYE for call_id=%s: %s", call_id, exc)
+        await self._end_call(call_id)
 
     async def _end_call(self, call_id: str) -> None:
         call = self._active_calls.pop(call_id, None)

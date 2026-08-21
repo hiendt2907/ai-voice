@@ -25,7 +25,6 @@ from fastapi import WebSocket
 from call.events import AudioChunkPayload, BeatPayload
 from telephony import TelephonyAdapter
 from tts.chain import TTSChain
-from tts.fillers import FillerSelector
 from tts.text_normalizer import normalize as tts_normalize
 
 logger = logging.getLogger(__name__)
@@ -193,12 +192,29 @@ class EgressSender:
                 else:
                     gen = BeatsAudioStream(tts, tts_interrupt).stream(beats, slots)
                 first = True
-                async for chunk in gen:
-                    if first:
-                        ttfa_ms = round((time.perf_counter() - t_start) * 1000, 1)
-                        logger.info("TTFA: %.1f ms", ttfa_ms)
-                        first = False
-                    await self.send_audio(chunk, turn)
+                chunks = 0
+                audio_bytes = 0
+                try:
+                    async for chunk in gen:
+                        if first:
+                            ttfa_ms = round((time.perf_counter() - t_start) * 1000, 1)
+                            logger.info("TTFA: %.1f ms", ttfa_ms)
+                            first = False
+                        chunks += 1
+                        audio_bytes += len(chunk)
+                        await self.send_audio(chunk, turn)
+                finally:
+                    # Logged unconditionally (including on interrupt/error):
+                    # "TTFA printed, then silence" is ambiguous without it —
+                    # it can't distinguish a full reply from a stream that
+                    # died after its first frame.
+                    logger.info(
+                        "TTS stream done: turn=%s chunks=%d %.2fs audio in %.0f ms%s",
+                        turn, chunks,
+                        audio_bytes / (_PLAYBACK_SAMPLE_RATE * _PLAYBACK_BYTES_PER_SAMPLE),
+                        (time.perf_counter() - t_start) * 1000,
+                        " (interrupted)" if tts_interrupt.is_set() else "",
+                    )
             else:
                 from tts.streamer import stream_step_beats  # noqa: PLC0415
 

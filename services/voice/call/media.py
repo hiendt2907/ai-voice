@@ -74,6 +74,11 @@ class MediaRouter:
         self._streaming_vad: VADDetector | None = None
         self._streaming_queue: asyncio.Queue[tuple[bytes, bool] | None] | None = None
         self._turn_id_provider: TurnIdProvider = lambda: "0"
+        # Inbound audio accounting. "No STT transcript for the whole call" is
+        # otherwise indistinguishable between "the caller's audio never
+        # reached us" (one-way RTP) and "it reached us but VAD/STT produced
+        # nothing" — the two have completely different fixes.
+        self._frames_in = 0
 
     @property
     def is_speech_active(self) -> bool:
@@ -271,6 +276,18 @@ class MediaRouter:
         (set the interrupt event, bump barge_in_count, log).
         """
         frame_data = base64.b64decode(frame_b64_or_raw)
+        self._frames_in += 1
+        if self._frames_in == 1:
+            logger.info(
+                "First inbound audio frame: session_id=%s (%d bytes)",
+                self.session_id, len(frame_data),
+            )
+        elif self._frames_in % 500 == 0:  # ~every 10s at 20ms frames
+            logger.info(
+                "Inbound audio: session_id=%s frames=%d (%.0fs) speech_active=%s",
+                self.session_id, self._frames_in, self._frames_in * 0.02,
+                self.is_speech_active,
+            )
 
         if self._streaming_stt is not None and self._streaming_vad is not None:
             pcm = ulaw_to_pcm(frame_data).tobytes()

@@ -27,6 +27,7 @@ import websockets
 from audio.codec import pcm_to_ulaw
 from obs.tracing import new_traceparent
 from sip.client import SipCall
+from sip.rtp_session import RtpClosedError
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,10 @@ async def bridge_call(
         )
         for task in pending:
             task.cancel()
+        if pending:
+            # Awaited so cancellation actually finishes before the `async
+            # with` closes the WS underneath a task still writing to it.
+            await asyncio.gather(*pending, return_exceptions=True)
         for task in done:
             exc = task.exception()
             if exc is not None:
@@ -78,15 +83,23 @@ async def bridge_call(
 
 
 async def _pump_rtp_to_ws(call: SipCall, ws: websockets.WebSocketClientProtocol) -> None:
-    """Caller's voice (RTP, from voip24h) -> audio_frame events -> worker."""
-    while True:
-        pcm = await call.rtp.read_pcm()
-        samples = np.frombuffer(pcm, dtype=np.int16)
-        ulaw = pcm_to_ulaw(samples)  # already bytes
-        await ws.send(json.dumps({
-            "event": "audio_frame",
-            "data": base64.b64encode(ulaw).decode("ascii"),
-        }))
+    """Caller's voice (RTP, from voip24h) -> audio_frame events -> worker.
+
+    Returns (rather than hanging) when the SIP leg goes away: `read_pcm()`
+    raises `RtpClosedError` on BYE, which is what lets `bridge_call` unwind and
+    close the WS so the worker runs its end-of-call teardown.
+    """
+    try:
+        while True:
+            pcm = await call.rtp.read_pcm()
+            samples = np.frombuffer(pcm, dtype=np.int16)
+            ulaw = pcm_to_ulaw(samples)  # already bytes
+            await ws.send(json.dumps({
+                "event": "audio_frame",
+                "data": base64.b64encode(ulaw).decode("ascii"),
+            }))
+    except RtpClosedError:
+        logger.info("CloudFone bridge: RTP session closed — ending bridge")
 
 
 async def _pump_ws_to_rtp(call: SipCall, ws: websockets.WebSocketClientProtocol) -> None:
