@@ -95,6 +95,24 @@ class TestExtractSlots:
             expected = (datetime.now() + timedelta(days=n)).strftime("%d/%m/%Y")
             assert expected in slots["appointment_date"], f"{n} ngày nữa should be +{n} days"
 
+    def test_date_weekday_next_week_compound(self):
+        """"thứ Ba tuần sau" — a caller-LLM dynamic conversation test caught
+        the plain "tuần sau" branch (today+7 raw calendar days, checked
+        before the weekday loop) winning over the named weekday whenever
+        both appeared together, landing on the wrong day of week entirely
+        (e.g. today Saturday + "thứ Ba tuần sau" resolved to next Saturday
+        instead of next Tuesday)."""
+        from datetime import datetime, timedelta  # noqa: PLC0415
+        now = datetime.now()
+        this_monday = now - timedelta(days=now.weekday())
+        next_monday = this_monday + timedelta(days=7)
+        for word, target_wd in [("thứ Hai", 0), ("thứ Ba", 1), ("thứ Tư", 2), ("thứ Bảy", 5)]:
+            slots = extract_slots(f"em muốn đặt {word} tuần sau")
+            expected_dt = next_monday + timedelta(days=target_wd)
+            expected = expected_dt.strftime("%d/%m/%Y")
+            assert expected in slots["appointment_date"], f"{word} tuần sau should land on next week's {word}"
+            assert expected_dt.weekday() == target_wd
+
     def test_phone(self):
         slots = extract_slots("số điện thoại của tôi là 0901234567")
         assert slots["patient_phone"] == "0901234567"

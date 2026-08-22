@@ -204,6 +204,33 @@ def test_match_no_match():
     assert result.intent is None
 
 
+def test_leading_confirm_outranks_embedded_intent_keyword():
+    """Caught by a dynamic LLM-caller test: caller confirms the offered
+    slot ("Ừ thì đặt đi") then adds an unrelated hedge/aside later in the
+    same utterance that happens to contain "đổi giờ" — the leading direct
+    reply must win, not the longer embedded substring, or the just-confirmed
+    appointment gets silently wiped."""
+    intents = [
+        {"intent": "confirm", "examples": [{"text": "ừ"}, {"text": "đúng rồi"}, {"text": "ok"}]},
+        {"intent": "change_time", "examples": [{"text": "đổi giờ"}, {"text": "giờ khác"}]},
+    ]
+    result = match_intent(
+        "Ừ thì đặt đi, nhưng nhớ báo trước là tôi hay đổi giờ lắm, "
+        "nếu bác sĩ nào không linh hoạt thì bảo em chuyển ngay cho người khác nhé. Cảm ơn.",
+        intents,
+    )
+    assert result.intent == "confirm"
+
+
+def test_embedded_intent_keyword_still_matches_without_leading_confirm():
+    intents = [
+        {"intent": "confirm", "examples": [{"text": "ừ"}, {"text": "đúng rồi"}, {"text": "ok"}]},
+        {"intent": "change_time", "examples": [{"text": "đổi giờ"}, {"text": "giờ khác"}]},
+    ]
+    result = match_intent("đổi giờ được không", intents)
+    assert result.intent == "change_time"
+
+
 def test_extract_date_slot():
     result = match_intent("ngày 15 tháng 6", [])
     assert result.slots.get("appointment_date") is not None

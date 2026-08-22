@@ -246,9 +246,23 @@ def _score(utterance_lower: str, example_text: str) -> float:
     This keeps scores bounded and avoids false positives where a short
     affirmative like 'đúng' would outscore against a longer deny phrase
     like 'không đúng' under the old len(example)/len(utterance) formula.
+
+    Leading-clause match ranks above any embedded-substring match. Real
+    conversational Vietnamese leads with the direct reply to what the AI
+    just asked, then elaborates/hedges after a comma. A dynamic LLM-caller
+    test caught this: "ừ thì đặt đi, ... tôi hay đổi giờ lắm..." — the
+    caller is CONFIRMING (leading "ừ"), but the old formula let the longer
+    embedded "đổi giờ" (part of an unrelated aside deep in the sentence)
+    outscore the short leading "ừ" purely because 7 chars > 2 chars, firing
+    change_time and silently wiping the just-confirmed appointment slot.
     """
     if example_text == utterance_lower:
         return 1.0
+    stripped = utterance_lower.lstrip()
+    if stripped.startswith(example_text):
+        after = stripped[len(example_text):]
+        if not after or after[0] in " ,.!?;:":
+            return 0.9 + len(example_text) / max(len(utterance_lower), 1) * 0.1
     if example_text in utterance_lower:
         return len(example_text) / max(len(utterance_lower), 1)
     if utterance_lower in example_text:

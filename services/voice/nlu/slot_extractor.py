@@ -217,19 +217,32 @@ def extract_slots(utterance: str) -> dict[str, str]:
     # to anchor on.
     elif (m := re.search(r"\b(\d{1,2})\s+(?:hôm|ngày|bữa)\s+nữa\b", utt)):
         appointment_date = _format_date_vn(now + timedelta(days=int(m.group(1))))
-    elif re.search(r"\btuần sau\b", utt):
-        appointment_date = _format_date_vn(now + timedelta(days=7))
     else:
         _WEEKDAY_PATTERNS = [
             (r"\bthứ\s*hai\b", 0), (r"\bthứ\s*ba\b", 1), (r"\bthứ\s*tư\b", 2),
             (r"\bthứ\s*năm\b", 3), (r"\bthứ\s*sáu\b", 4),
             (r"\bthứ\s*bảy\b|\bthứ\s*7\b", 5), (r"\bchủ\s*nhật\b", 6),
         ]
+        _has_next_week = bool(re.search(r"\btuần sau\b|\btuần tới\b|\btuần kế\b", utt))
         for pattern, target_wd in _WEEKDAY_PATTERNS:
             if re.search(pattern, utt):
-                days_ahead = (target_wd - now.weekday()) % 7 or 7
-                appointment_date = _format_date_vn(now + timedelta(days=days_ahead))
+                if _has_next_week:
+                    # Compound phrase like "thứ Ba tuần sau" — this must land
+                    # on that weekday IN NEXT WEEK, not just today+7 raw days.
+                    # A caller-LLM dynamic test caught the old "tuần sau"
+                    # branch (today+7 unconditional, checked before this loop)
+                    # winning over the named weekday whenever both appeared in
+                    # the same utterance: today Saturday + "thứ Ba tuần sau"
+                    # got resolved to next Saturday instead of next Tuesday.
+                    this_monday = now - timedelta(days=now.weekday())
+                    next_monday = this_monday + timedelta(days=7)
+                    appointment_date = _format_date_vn(next_monday + timedelta(days=target_wd))
+                else:
+                    days_ahead = (target_wd - now.weekday()) % 7 or 7
+                    appointment_date = _format_date_vn(now + timedelta(days=days_ahead))
                 break
+        if appointment_date is None and _has_next_week:
+            appointment_date = _format_date_vn(now + timedelta(days=7))
         if appointment_date is None:
             m = re.search(
                 r"(?:ngày\s+)?(\d{1,2})\s*(?:tháng|/|-)\s*(\d{1,2})|ngày\s+(\d{1,2})(?!\s*tháng)",
