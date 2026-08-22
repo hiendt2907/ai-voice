@@ -282,7 +282,19 @@ def extract_slots(utterance: str) -> dict[str, str]:
         slots["time_of_day"] = "tối"
 
     # ── Hour ────────────────────────────────────────────────────────────────
-    hour_m = re.search(r"(?:lúc\s+|khoảng\s+|đặt\s+)?(\d{1,2})\s*(?:giờ|h)\b", utt, re.IGNORECASE)
+    # Prefer the LAST "lúc/khoảng/đặt N giờ" anchored mention over a bare
+    # match. An utterance can contain an incidental hour that isn't the
+    # requested appointment time at all — e.g. "Chủ nhật chỉ làm đến 12 giờ
+    # thôi hả? ... vậy tôi đặt lịch thứ Hai lúc 8 giờ sáng nhé" — the old
+    # single re.search grabbed the leftmost number ("12", the clinic's
+    # closing time) instead of the customer's actual anchored request ("lúc
+    # 8 giờ"). Found via a dynamic LLM-caller test. Falling back to the last
+    # bare mention (not the first) matches how this file already treats
+    # other self-corrected values (date, time_of_day) — the caller's final
+    # stated number wins over an earlier aside.
+    anchored = list(re.finditer(r"(?:lúc|khoảng|đặt)\s+(\d{1,2})\s*(?:giờ|h)\b", utt, re.IGNORECASE))
+    bare = list(re.finditer(r"(\d{1,2})\s*(?:giờ|h)\b", utt, re.IGNORECASE))
+    hour_m = anchored[-1] if anchored else (bare[-1] if bare else None)
     if hour_m:
         h = int(hour_m.group(1))
         # AM/PM correction: "3h chiều" → 15, "11h sáng" → 11

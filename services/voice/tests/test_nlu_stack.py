@@ -113,6 +113,25 @@ class TestExtractSlots:
             assert expected in slots["appointment_date"], f"{word} tuần sau should land on next week's {word}"
             assert expected_dt.weekday() == target_wd
 
+    def test_hour_prefers_last_anchored_over_incidental_earlier_number(self):
+        """A dynamic LLM-caller test caught the old single re.search grabbing
+        the leftmost hour-like number in the utterance even when it was an
+        incidental aside (clinic closing time), not the customer's actual
+        requested hour stated later with an explicit "lúc" anchor:
+        "Chủ nhật chỉ làm đến 12 giờ thôi hả? ... tôi đặt lịch thứ Hai lúc 8
+        giờ sáng nhé" must extract hour=8, not hour=12."""
+        slots = extract_slots(
+            "Thế à, Chủ nhật thì chỉ làm đến 12 giờ thôi hả? Tôi định đi buổi "
+            "sáng sớm chút mà nghe hơi gấp. Thôi được rồi, vậy tôi đặt lịch "
+            "thứ Hai lúc 8 giờ sáng nhé, nhưng nhớ nhắc kỹ là tôi hay bị trễ "
+            "giờ một tí đấy."
+        )
+        assert slots["appointment_hour"] == "8"
+
+    def test_hour_falls_back_to_last_bare_mention_without_anchor(self):
+        slots = extract_slots("9 giờ hay 10 giờ đều được, thôi 10 giờ nhé")
+        assert slots["appointment_hour"] == "10"
+
     def test_phone(self):
         slots = extract_slots("số điện thoại của tôi là 0901234567")
         assert slots["patient_phone"] == "0901234567"
