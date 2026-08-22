@@ -40,6 +40,26 @@ _store_lock = asyncio.Lock()
 FALLBACK_MALE = "Câu hỏi này để em hỏi thêm các bác sĩ chuyên môn, anh nhé. Khi có thông tin em sẽ phản hồi lại anh ngay."
 FALLBACK_FEMALE = "Câu hỏi này để em hỏi thêm các bác sĩ chuyên môn, chị nhé. Khi có thông tin em sẽ phản hồi lại chị ngay."
 
+# Spoken specifically when runtime.guardrails.is_blacklisted() fires — the
+# caller asked something needing a diagnosis/prescription/prognosis. Distinct
+# from FALLBACK_*: must explicitly promise a doctor callback (not just "em
+# sẽ phản hồi") and explicitly invite the caller to keep going with anything
+# else, since the AI cannot answer this one itself and the call keeps going.
+DIAGNOSIS_ESCALATION_MALE = (
+    "Dạ, câu này thuộc chuyên môn của bác sĩ nên em không thể trả lời trực tiếp được ạ. "
+    "Em sẽ chuyển thông tin để bác sĩ gọi lại cho anh sớm nhất ạ. "
+    "Anh có cần em hỗ trợ đặt lịch khám hay việc gì khác không ạ?"
+)
+DIAGNOSIS_ESCALATION_FEMALE = (
+    "Dạ, câu này thuộc chuyên môn của bác sĩ nên em không thể trả lời trực tiếp được ạ. "
+    "Em sẽ chuyển thông tin để bác sĩ gọi lại cho chị sớm nhất ạ. "
+    "Chị có cần em hỗ trợ đặt lịch khám hay việc gì khác không ạ?"
+)
+
+
+def diagnosis_escalation_text(gender: Literal["male", "female", "unknown"]) -> str:
+    return DIAGNOSIS_ESCALATION_MALE if gender != "female" else DIAGNOSIS_ESCALATION_FEMALE
+
 
 # ── Data classes ───────────────────────────────────────────────────────────────
 

@@ -178,8 +178,11 @@ class DialogueEngine:
                 logger.info("[SHADOW] fallback (no RAG match)")
                 return
 
+            fallback_gender = gender if gender in ("male", "female") else "unknown"
+            blacklisted = is_blacklisted(utterance)
+
             reasoned = False
-            if self.conv_engine is not None and not is_blacklisted(utterance):
+            if self.conv_engine is not None and not blacklisted:
                 context = await self._loose_rag_context(utterance, gender)
                 if context is not None:
                     reasoned = await self._reason_and_speak(
@@ -188,10 +191,20 @@ class DialogueEngine:
                     )
 
             if not reasoned:
-                fallback_gender = gender if gender in ("male", "female") else "unknown"
-                fallback_msg = self.ctx.script.get(
-                    "ragFallbackMessage", rag_store.fallback_text(fallback_gender)
-                )
+                # Diagnosis/prescription/prognosis questions get an explicit
+                # doctor-callback promise instead of the generic "em sẽ hỏi
+                # thêm" RAG-miss line — the caller asked something the AI
+                # must never answer itself, not something it merely doesn't
+                # know yet. The call keeps listening for the next utterance
+                # either way (turn_handler loops back), so this line also
+                # explicitly invites the caller to continue with anything
+                # else instead of leaving the call hanging on the refusal.
+                if blacklisted:
+                    fallback_msg = rag_store.diagnosis_escalation_text(fallback_gender)
+                else:
+                    fallback_msg = self.ctx.script.get(
+                        "ragFallbackMessage", rag_store.fallback_text(fallback_gender)
+                    )
                 await self.egress.say(
                     fallback_msg, turn, t_start,
                     state.current_step_id if state else "", self.tts_chain, self.tts,

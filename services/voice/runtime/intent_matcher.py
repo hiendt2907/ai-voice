@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+
+from nlu.slot_extractor import extract_slots as _extract_slots
 
 
 @dataclass(frozen=True)
@@ -18,176 +19,6 @@ class MatchResult:
     slots: dict[str, str]
     confidence: float  # 0.0–1.0
 
-
-_WEEKDAYS_VN = ["thứ Hai", "thứ Ba", "thứ Tư", "thứ Năm", "thứ Sáu", "thứ Bảy", "Chủ Nhật"]
-
-_SPECIALTY_MAP = {
-    # Nội khoa & tiêu hóa
-    "nội khoa": "Nội khoa",
-    "nội soi": "Nội soi - Tiêu hóa",
-    "nội soi dạ dày": "Nội soi - Tiêu hóa",
-    "nội soi tiêu hóa": "Nội soi - Tiêu hóa",
-    "nội soi đại tràng": "Nội soi - Tiêu hóa",
-    "tiêu hóa": "Tiêu hóa",
-    "dạ dày": "Tiêu hóa",
-    "gan": "Tiêu hóa",
-    "mật": "Tiêu hóa",
-    "ruột": "Tiêu hóa",
-    # Tim mạch
-    "tim mạch": "Tim mạch",
-    "tim": "Tim mạch",
-    # Da liễu
-    "da liễu": "Da liễu",
-    "da dày": "Da liễu",
-    "da": "Da liễu",
-    # Nha khoa
-    "nha khoa": "Nha khoa",
-    "răng": "Nha khoa",
-    "răng hàm mặt": "Nha khoa",
-    # Mắt
-    "mắt": "Nhãn khoa",
-    "nhãn khoa": "Nhãn khoa",
-    # Tai mũi họng
-    "tai mũi họng": "Tai mũi họng",
-    "tmh": "Tai mũi họng",
-    "tai": "Tai mũi họng",
-    "mũi": "Tai mũi họng",
-    "họng": "Tai mũi họng",
-    # Xương khớp
-    "xương khớp": "Xương khớp",
-    "cơ xương khớp": "Xương khớp",
-    "cột sống": "Xương khớp",
-    "khớp": "Xương khớp",
-    # Thần kinh
-    "thần kinh": "Thần kinh",
-    "não": "Thần kinh",
-    # Nhi
-    "nhi": "Nhi khoa",
-    "nhi khoa": "Nhi khoa",
-    "trẻ em": "Nhi khoa",
-    "trẻ con": "Nhi khoa",
-    # Sản phụ khoa
-    "sản phụ khoa": "Sản phụ khoa",
-    "phụ khoa": "Sản phụ khoa",
-    "sản khoa": "Sản phụ khoa",
-    # Ung bướu
-    "ung bướu": "Ung bướu",
-    "ung thư": "Ung bướu",
-    # Hô hấp
-    "hô hấp": "Hô hấp",
-    "phổi": "Hô hấp",
-    "ho": "Hô hấp",
-    "covid": "Hô hấp",
-    # Thận - tiết niệu
-    "thận tiết niệu": "Thận - Tiết niệu",
-    "thận": "Thận - Tiết niệu",
-    "tiết niệu": "Thận - Tiết niệu",
-    # Nội tiết
-    "nội tiết": "Nội tiết",
-    "tiểu đường": "Nội tiết",
-    "tuyến giáp": "Nội tiết",
-    # Khám tổng quát
-    "tổng quát": "Khám tổng quát",
-    "tổng kiểm tra": "Khám tổng quát",
-    "kiểm tra sức khỏe": "Khám tổng quát",
-    "tầm soát": "Khám tổng quát",
-    "khám sức khỏe": "Khám tổng quát",
-    # Phục hồi chức năng
-    "phục hồi chức năng": "Phục hồi chức năng",
-    "vật lý trị liệu": "Phục hồi chức năng",
-    # Tâm thần
-    "tâm thần": "Tâm thần kinh",
-    "tâm lý": "Tâm thần kinh",
-}
-
-# Ordered by length descending so longer, more specific phrases match first
-_SPECIALTY_MAP_SORTED = sorted(_SPECIALTY_MAP.items(), key=lambda x: len(x[0]), reverse=True)
-
-# Symptom phrase → implied specialty.
-# Ordered by specificity (longer phrases first so "tim đập nhanh" beats "tim").
-_SYMPTOM_MAP: dict[str, str] = {
-    # Tiêu hóa
-    "đau dạ dày": "Tiêu hóa",
-    "viêm dạ dày": "Tiêu hóa",
-    "trào ngược": "Tiêu hóa",
-    "đau bụng": "Tiêu hóa",
-    "đầy bụng": "Tiêu hóa",
-    "đầy hơi": "Tiêu hóa",
-    "buồn nôn": "Tiêu hóa",
-    "khó tiêu": "Tiêu hóa",
-    "tiêu chảy": "Tiêu hóa",
-    "táo bón": "Tiêu hóa",
-    # Tim mạch
-    "tim đập nhanh": "Tim mạch",
-    "tim đập loạn": "Tim mạch",
-    "đau ngực": "Tim mạch",
-    "tức ngực": "Tim mạch",
-    "hồi hộp": "Tim mạch",
-    "khó thở khi gắng sức": "Tim mạch",
-    # Hô hấp
-    "khó thở": "Hô hấp",
-    "thở khò khè": "Hô hấp",
-    "viêm phổi": "Hô hấp",
-    "viêm phế quản": "Hô hấp",
-    "ho kéo dài": "Hô hấp",
-    "ho ra máu": "Hô hấp",
-    # Thần kinh
-    "đau đầu dữ dội": "Thần kinh",
-    "đau nửa đầu": "Thần kinh",
-    "đau đầu": "Thần kinh",
-    "chóng mặt": "Thần kinh",
-    "tê liệt": "Thần kinh",
-    "co giật": "Thần kinh",
-    "mất ngủ": "Thần kinh",
-    # Da liễu
-    "nổi mẩn ngứa": "Da liễu",
-    "nổi mề đay": "Da liễu",
-    "nổi mẩn": "Da liễu",
-    "ngứa da": "Da liễu",
-    "mụn trứng cá": "Da liễu",
-    "viêm da": "Da liễu",
-    "rụng tóc": "Da liễu",
-    # Xương khớp
-    "đau lưng dưới": "Xương khớp",
-    "đau cột sống": "Xương khớp",
-    "đau khớp gối": "Xương khớp",
-    "đau lưng": "Xương khớp",
-    "đau khớp": "Xương khớp",
-    "tê tay": "Xương khớp",
-    "tê chân": "Xương khớp",
-    # Tai mũi họng
-    "đau tai": "Tai mũi họng",
-    "ù tai": "Tai mũi họng",
-    "nghẹt mũi": "Tai mũi họng",
-    "chảy mũi": "Tai mũi họng",
-    "đau họng": "Tai mũi họng",
-    "viêm amidan": "Tai mũi họng",
-    "viêm xoang": "Tai mũi họng",
-    # Mắt
-    "mờ mắt": "Nhãn khoa",
-    "đau mắt": "Nhãn khoa",
-    "đỏ mắt": "Nhãn khoa",
-    "chảy nước mắt": "Nhãn khoa",
-    # Nội tiết / Thận
-    "tiểu nhiều": "Nội tiết",
-    "khát nước nhiều": "Nội tiết",
-    "tăng cân": "Nội tiết",
-    "giảm cân bất thường": "Nội tiết",
-    "phù chân": "Thận - Tiết niệu",
-    "tiểu buốt": "Thận - Tiết niệu",
-    "tiểu ra máu": "Thận - Tiết niệu",
-    # Nhi
-    "con sốt": "Nhi khoa",
-    "trẻ sốt": "Nhi khoa",
-    "bé bệnh": "Nhi khoa",
-    "con bệnh": "Nhi khoa",
-    # Tổng quát
-    "mệt mỏi": "Khám tổng quát",
-    "sụt cân": "Khám tổng quát",
-    "không khỏe": "Khám tổng quát",
-}
-
-_SYMPTOM_MAP_SORTED = sorted(_SYMPTOM_MAP.items(), key=lambda x: len(x[0]), reverse=True)
 
 # Explicit symptom/health-concern markers — caller describes what's wrong with their body
 _SYMPTOM_MARKERS = re.compile(
@@ -210,33 +41,6 @@ _INQUIRY_MARKERS = re.compile(
     r"|mất bao lâu|thủ tục|gồm những gì|có những gì|bảo hiểm|được không|như thế nào)\b",
     re.IGNORECASE,
 )
-
-# Name extraction patterns, tried in order
-_NAME_CAP = r"[A-ZĐẮẰẲẴẶẤẦẨẪẬÁÀÃẢẠÉÈẺẼẸẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌỐỒỔỖỘỚỜỞỠỢÚÙỦŨỤỨỪỬỮỰÝỲỶỸỴ]"
-_NAME_PATTERNS = [
-    # "tên tôi là X", "tên em là X", "anh/chị tên là X"
-    r"(?:tôi|em|anh|chị|bạn)\s+tên\s+(?:là\s+)?(.{2,35})",
-    # "tên tôi là X" (reversed order)
-    r"tên\s+(?:tôi|em|anh|chị|bạn)\s+(?:là\s+)?(.{2,35})",
-    # "tên là X"
-    r"tên\s+là\s+(.{2,35})",
-    # "tôi là X", "em là X" — but avoid matching short common words like "tôi là bệnh nhân"
-    r"(?:tôi|em|anh|chị)\s+là\s+(" + _NAME_CAP + r"[a-zA-ZÀ-ỹ ]{2,34})",
-    # "họ tên (là) X"
-    r"họ\s+tên\s+(?:là\s+)?(.{2,35})",
-    # "bệnh nhân tên X" / "bệnh nhân là X"
-    r"bệnh\s+nhân\s+(?:tên|là)\s+(.{2,35})",
-    # "đặt cho X", "khám cho X", "cho X" + capitalized name
-    r"(?:đặt\s+cho|khám\s+cho|lịch\s+cho|cho)\s+(?:anh|chị|em|bạn|ông|bà|cô|chú|bác)?\s*(" + _NAME_CAP + r"[a-zA-ZÀ-ỹ ]{1,34})",
-]
-
-
-def _weekday_vn(weekday: int) -> str:
-    return _WEEKDAYS_VN[weekday]
-
-
-def _format_date_vn(dt: datetime) -> str:
-    return f"{_weekday_vn(dt.weekday())}, ngày {dt.day:02d}/{dt.month:02d}/{dt.year}"
 
 
 def _score(utterance_lower: str, example_text: str) -> float:
@@ -287,7 +91,12 @@ def match_intent(utterance: str, intents: list[dict]) -> MatchResult:
                 slots: dict[str, str] = dict(example.get("slots", {}))
                 best = MatchResult(intent=intent_name, slots=slots, confidence=score)
 
-    # Slot extraction independent of intent
+    # Slot extraction independent of intent — single source of truth shared
+    # with the LLM slot-recovery path (nlu/slot_extractor.py). This used to
+    # be a second, hand-maintained copy of the same regex logic that had
+    # drifted out of sync with bug fixes applied only to the other copy —
+    # found when a dynamic LLM-caller test reproduced an already-fixed date
+    # bug because the live turn pipeline was still calling the stale copy.
     extracted = _extract_slots(utterance)
     merged_slots = {**extracted, **best.slots}
 
@@ -323,149 +132,3 @@ def _infer_intent_from_context(utterance_lower: str, slots: dict[str, str]) -> s
         return "book_appointment"
 
     return None
-
-
-def _extract_slots(utterance: str) -> dict[str, str]:
-    slots: dict[str, str] = {}
-    utt = utterance.lower().strip()
-    now = datetime.now()
-
-    # ── Date resolution ──────────────────────────────────────────────────────
-    appointment_date: str | None = None
-
-    if re.search(r"\bhôm nay\b|\bngày hôm nay\b", utt):
-        appointment_date = _format_date_vn(now)
-    elif re.search(r"\bngày mai\b", utt):
-        appointment_date = _format_date_vn(now + timedelta(days=1))
-    elif re.search(r"\bngày mốt\b|\bngày kia\b|\bmốt\b", utt):
-        appointment_date = _format_date_vn(now + timedelta(days=2))
-    elif re.search(r"\btuần sau\b", utt):
-        appointment_date = _format_date_vn(now + timedelta(days=7))
-    else:
-        weekday_names = [
-            (r"\bthứ\s*hai\b", 0),
-            (r"\bthứ\s*ba\b", 1),
-            (r"\bthứ\s*tư\b", 2),
-            (r"\bthứ\s*năm\b", 3),
-            (r"\bthứ\s*sáu\b", 4),
-            (r"\bthứ\s*bảy\b|\bthứ\s*7\b", 5),
-            (r"\bchủ\s*nhật\b", 6),
-        ]
-        for pattern, target_weekday in weekday_names:
-            if re.search(pattern, utt):
-                days_ahead = (target_weekday - now.weekday()) % 7
-                if days_ahead == 0:
-                    days_ahead = 7
-                appointment_date = _format_date_vn(now + timedelta(days=days_ahead))
-                break
-
-        if appointment_date is None:
-            m = re.search(
-                r"(?:ngày\s+)?(\d{1,2})\s*(?:tháng|/|-)\s*(\d{1,2})|ngày\s+(\d{1,2})(?!\s*tháng)",
-                utterance, re.IGNORECASE,
-            )
-            if m:
-                if m.group(1) and m.group(2):
-                    day, month = int(m.group(1)), int(m.group(2))
-                else:
-                    day, month = int(m.group(3)), now.month
-                year = now.year
-                try:
-                    dt = datetime(year, month, day)
-                    if dt.date() < now.date():
-                        month = month % 12 + 1
-                        year = year if month > 1 else year + 1
-                        dt = datetime(year, month, day)
-                    appointment_date = _format_date_vn(dt)
-                except ValueError:
-                    pass
-
-    if appointment_date:
-        slots["appointment_date"] = appointment_date
-
-    # ── Specific hour ────────────────────────────────────────────────────────
-    # "8 giờ", "8h", "lúc 8 giờ", "khoảng 9h sáng", "đặt 10 giờ"
-    hour_m = re.search(
-        r"(?:lúc\s+|khoảng\s+|đặt\s+)?(\d{1,2})\s*(?:giờ|h)\b",
-        utt, re.IGNORECASE,
-    )
-    if hour_m:
-        hour_val = int(hour_m.group(1))
-        if 6 <= hour_val <= 21:
-            slots["appointment_hour"] = str(hour_val)
-
-    # ── Time of day ──────────────────────────────────────────────────────────
-    if re.search(r"\bsáng\b", utterance, re.IGNORECASE):
-        slots["time_of_day"] = "sáng"
-        # Infer morning from hour if not explicitly said
-    elif re.search(r"\bchiều\b", utterance, re.IGNORECASE):
-        slots["time_of_day"] = "chiều"
-    elif re.search(r"\btối\b", utterance, re.IGNORECASE):
-        slots["time_of_day"] = "tối"
-    elif "appointment_hour" in slots:
-        # Infer time_of_day from hour value
-        h = int(slots["appointment_hour"])
-        if h < 12:
-            slots["time_of_day"] = "sáng"
-        elif h < 18:
-            slots["time_of_day"] = "chiều"
-        else:
-            slots["time_of_day"] = "tối"
-
-    # ── time_slot: combined display string ───────────────────────────────────
-    if "time_of_day" in slots:
-        tod = slots["time_of_day"]
-        hour = slots.get("appointment_hour")
-        if hour:
-            slots["time_slot"] = f"buổi {tod} lúc {hour} giờ"
-        else:
-            slots["time_slot"] = f"buổi {tod}"
-
-    # ── Patient name ─────────────────────────────────────────────────────────
-    for pattern in _NAME_PATTERNS:
-        nm = re.search(pattern, utterance, re.IGNORECASE)
-        if nm:
-            candidate = nm.group(1).strip()
-            # Keep only the first 4 words (avoid capturing trailing garbage)
-            words = candidate.split()[:4]
-            name = " ".join(words).rstrip(".,!?;:")
-            if len(name) >= 2:
-                slots["patient_name"] = name.title()
-                break
-
-    # ── Nội soi type ─────────────────────────────────────────────────────────
-    # Must run before specialty detection — order: combo > đại tràng > dạ dày
-    _has_noisoi = "nội soi" in utt
-    _has_da_day = "dạ dày" in utt
-    _has_dai_trang = "đại tràng" in utt
-    _has_combo = bool(re.search(r"\bcả (hai|2)\b|\bkết hợp\b|\bcombo\b|\bcả dạ dày", utt))
-    if _has_combo or (_has_da_day and _has_dai_trang):
-        slots["noisoi_type"] = "combo"
-    elif _has_dai_trang:
-        slots["noisoi_type"] = "dai_trang"
-    elif _has_da_day or _has_noisoi:
-        # "nội soi" alone defaults to dạ dày (most common); explicit "đại tràng" overrides above
-        if _has_da_day or (not _has_dai_trang and _has_noisoi):
-            slots["noisoi_type"] = "da_day"
-
-    # ── Specialty ────────────────────────────────────────────────────────────
-    # Try longer keywords first to avoid "da" matching inside "da liễu"
-    for keyword, label in _SPECIALTY_MAP_SORTED:
-        if keyword in utt:
-            slots["specialty"] = label
-            break
-
-    # ── Symptom → implied specialty (if no direct specialty keyword found) ───
-    if "specialty" not in slots:
-        for symptom_phrase, implied_specialty in _SYMPTOM_MAP_SORTED:
-            if symptom_phrase in utt:
-                slots["specialty"] = implied_specialty
-                slots["symptom_description"] = utterance
-                break
-
-    # ── Phone number ─────────────────────────────────────────────────────────
-    phone_m = re.search(r"(?<!\d)(0[3-9]\d{8})(?!\d)", utterance)
-    if phone_m:
-        slots["patient_phone"] = phone_m.group(1)
-
-    return slots

@@ -316,6 +316,7 @@ async def test_handle_turn_blacklisted_utterance_skips_llm(monkeypatch):
 
     monkeypatch.setattr(rag_store_module, "cache_lookup", AsyncMock(return_value=None))
     monkeypatch.setattr(rag_store_module, "fallback_text", lambda gender: "fallback msg")
+    monkeypatch.setattr(rag_store_module, "diagnosis_escalation_text", lambda gender: "doctor callback msg")
     search = AsyncMock(side_effect=AssertionError("must not reach RAG search for blacklisted input"))
     monkeypatch.setattr(rag_store_module, "search", search)
 
@@ -325,7 +326,9 @@ async def test_handle_turn_blacklisted_utterance_skips_llm(monkeypatch):
     await dialogue.handle_turn("bác sĩ chẩn đoán giúp em", 1, 0.0, state, asyncio.Event(), escalate)
 
     assert conv_engine.calls == []
-    assert egress.said == [("fallback msg", 1, "step1")]
+    # blacklisted (diagnosis) input must get the doctor-callback line, not
+    # the generic RAG-miss fallback — distinct spoken message on purpose.
+    assert egress.said == [("doctor callback msg", 1, "step1")]
     escalate.assert_awaited_once_with("bác sĩ chẩn đoán giúp em")
 
 

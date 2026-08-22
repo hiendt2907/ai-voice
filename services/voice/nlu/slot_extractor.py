@@ -150,13 +150,23 @@ _SYMPTOM_MAP: dict[str, str] = {
 _SYMPTOM_MAP_SORTED = sorted(_SYMPTOM_MAP.items(), key=lambda x: len(x[0]), reverse=True)
 
 _NAME_CAP = r"[A-ZĐẮẰẲẴẶẤẦẨẪẬÁÀÃẢẠÉÈẺẼẸẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌỐỒỔỖỘỚỜỞỠỢÚÙỦŨỤỨỪỬỮỰÝỲỶỸỴ]"
+# Anchored on a keyword ("tên là", "họ tên") — safe to match case-insensitively
+# since the captured name text isn't validated by case.
 _NAME_PATTERNS = [
     r"(?:tôi|em|anh|chị|bạn)\s+tên\s+(?:là\s+)?(.{2,35})",
     r"tên\s+(?:tôi|em|anh|chị|bạn)\s+(?:là\s+)?(.{2,35})",
     r"tên\s+là\s+(.{2,35})",
-    r"(?:tôi|em|anh|chị)\s+là\s+(" + _NAME_CAP + r"[a-zA-ZÀ-ỹ ]{2,34})",
     r"họ\s+tên\s+(?:là\s+)?(.{2,35})",
     r"bệnh\s+nhân\s+(?:tên|là)\s+(.{2,35})",
+]
+# Rely on an actual capital letter to distinguish a name from an ordinary
+# word ("cho tôi số điện thoại" must NOT match as a name) — must stay
+# case-SENSITIVE. re.IGNORECASE would fold the uppercase-only character
+# class down to match lowercase too, defeating the whole point of requiring
+# a capital. Found via a dynamic LLM-caller test: "báo lại cho tôi số điện
+# thoại" was extracted as patient_name "Tôi Số Điện".
+_NAME_PATTERNS_CASE_SENSITIVE = [
+    r"(?:tôi|em|anh|chị)\s+là\s+(" + _NAME_CAP + r"[a-zA-ZÀ-ỹ ]{2,34})",
     r"(?:đặt\s+cho|khám\s+cho|lịch\s+cho|cho)\s+(?:anh|chị|em|bạn|ông|bà|cô|chú|bác)?\s*(" + _NAME_CAP + r"[a-zA-ZÀ-ỹ ]{1,34})",
     # "Đặng Tập Hiền, số điện thoại 0909..." — name before comma followed by phone keyword
     r"^(" + _NAME_CAP + r"[a-zA-ZÀ-ỹ ]{1,34}),\s*(?:số|sdt|đt\b|điện)",
@@ -295,8 +305,11 @@ def extract_slots(utterance: str) -> dict[str, str]:
         slots["time_slot"] = f"buổi {tod} lúc {hour} giờ" if hour else f"buổi {tod}"
 
     # ── Patient name ─────────────────────────────────────────────────────────
-    for pattern in _NAME_PATTERNS:
-        nm = re.search(pattern, utterance, re.IGNORECASE)
+    for pattern, ignore_case in (
+        *((p, True) for p in _NAME_PATTERNS),
+        *((p, False) for p in _NAME_PATTERNS_CASE_SENSITIVE),
+    ):
+        nm = re.search(pattern, utterance, re.IGNORECASE if ignore_case else 0)
         if nm:
             # Stop at comma (which signals next clause, not part of the name)
             raw = nm.group(1).strip().split(",")[0].strip()
