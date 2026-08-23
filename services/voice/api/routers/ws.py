@@ -139,6 +139,9 @@ def _build_nlu() -> LLMNLUClassifier | None:
         model=_settings.llm_model,
         api_key=_settings.llm_api_key,
         timeout_s=_settings.llm_timeout_s,
+        fallback_models=[
+            m.strip() for m in (_settings.llm_fallback_models or "").split(",") if m.strip()
+        ],
     )
     return LLMNLUClassifier(client)
 

@@ -150,11 +150,15 @@ def _build_llm_client():  # type: ignore[return]
 
     logger.info("LLM provider: OpenAI-compatible (model=%s url=%s)", settings.llm_model, settings.llm_base_url)
     from llm.client import LLMClient  # noqa: PLC0415
+    fallbacks = [m.strip() for m in (settings.llm_fallback_models or "").split(",") if m.strip()]
+    if fallbacks:
+        logger.info("LLM fallback models: %s", ", ".join(fallbacks))
     return LLMClient(
         base_url=settings.llm_base_url,
         model=settings.llm_model,
         api_key=settings.llm_api_key,
         timeout_s=settings.llm_timeout_s,
+        fallback_models=fallbacks,
     )
 
 

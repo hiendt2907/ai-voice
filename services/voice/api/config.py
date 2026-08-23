@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://localhost:11434/v1"
     llm_model: str = "qwen2.5:latest"
     llm_api_key: str = "ollama"
+    # Danh sách model dự phòng, phân tách bằng dấu phẩy, thử theo đúng thứ tự
+    # sau llm_model. Model lỗi bị cầu dao tạm ngắt (llm/client.py) nên không
+    # bị thử lại ở mọi lượt thoại.
+    llm_fallback_models: str = ""
     llm_timeout_s: float = 10.0
 
     # TTS engine: "elevenlabs" | "gwen"

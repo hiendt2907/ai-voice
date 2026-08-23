@@ -22,7 +22,24 @@ data:
   # secret, not from here.
   LLM_PROVIDER: "ollama"   # "ollama" == generic OpenAI-compatible client path
   LLM_BASE_URL: "https://api.xkiro.com/v1"
-  LLM_MODEL: "qwen/qwen3.5-flash"
+  # qwen/qwen3.5-flash trả 503 liên tục từ 2026-08-22 (endpoint /chat/completions;
+  # /v1/models và TTS của xKiro vẫn bình thường → sự cố riêng của model này).
+  # gemini-3.7-flash đo được 132-142ms/lượt, nhanh hơn hẳn qwen (1835-2318ms).
+  LLM_MODEL: "google/gemini-3.7-flash"
+  # Chuỗi dự phòng, thử theo đúng thứ tự khi model trước lỗi. Model hỏng bị
+  # cầu dao tạm ngắt (llm/client.py) — 2 lỗi liên tiếp ngắt 120s, lỗi quyền
+  # (403/404) ngắt 1800s — nên model chết không cộng thêm round-trip vào độ
+  # trễ của mỗi lượt thoại.
+  #
+  # Danh sách đo thật ngày 2026-08-23 trên chính tài khoản xKiro này
+  # (POST /v1/chat/completions, độ trễ lượt đầu chưa warm):
+  #   gemini-3.7-flash 200 (warm ~132ms) | ministral-8b 200 557ms
+  #   mistral-small-2603 200 1455ms      | kimi-k2.5 200 3203ms
+  #   glm-5-turbo 200 7765ms             | grok-4.6 200 6403ms
+  #   qwen3.5-flash 503 (chết từ 22/08)  | gemini 3.6/3/2.5 403 (cần trả phí)
+  # z-ai/glm-4.6 CỐ Ý LOẠI: trả HTTP 200 nhưng content RỖNG — thất bại ngầm.
+  # qwen giữ ở cuối để tự dùng lại khi nhà cung cấp khôi phục.
+  LLM_FALLBACK_MODELS: "mistralai/ministral-8b,mistralai/mistral-small-2603,moonshotai/kimi-k2.5,x-ai/grok-4.6,z-ai/glm-5-turbo,qwen/qwen3.5-flash"
   # Back ON (2026-08-21) — needed for the slot-recovery path added in
   # runtime/executor.py: a step whose transitions gate on a slot (not
   # intent) can get stuck reprompting forever when STT garbles a common
