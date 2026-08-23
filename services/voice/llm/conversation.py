@@ -6,11 +6,8 @@ The LLM rephrases / elaborates using its persona + conversation history.
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import AsyncGenerator
-
-import httpx
 
 from tts.params import EmotionState
 
@@ -32,6 +29,7 @@ class ConversationEngine:
         temperature: float = 0.3,
         max_history_turns: int = 5,
         api_key: str = "",
+        fallback_models: list[str] | None = None,
     ) -> None:
         self._url = ollama_base_url.rstrip("/")
         self._model = model
@@ -39,6 +37,8 @@ class ConversationEngine:
         self._temperature = temperature
         self._max_history_turns = max_history_turns
         self._api_key = api_key
+        self._fallback_models = fallback_models or []
+        self._client = None
 
     _BASE_SYSTEM = (
         "Bạn là Linh, nhân viên tổng đài của phòng khám DoctorCheck.\n"
@@ -89,35 +89,28 @@ class ConversationEngine:
             user_content = f"[Thông tin tham khảo]: {kb_context}\n\n[Câu hỏi]: {utterance}"
         messages.append({"role": "user", "content": user_content})
 
-        payload = {
-            "model": self._model,
-            "messages": messages,
-            "stream": True,
-            "temperature": self._temperature,
-        }
+        # Dùng chung LLMClient để tầng reasoning cũng được hưởng chuỗi fallback
+        # model. Trước đây file này tự dựng httpx riêng — là bản sao thứ ba của
+        # cùng một lời gọi (llm/client.py, nlu/llm_resolver.py, và đây), nên khi
+        # model chính chết thì tầng này chết theo dù chain đã có.
+        if self._client is None:
+            from llm.client import LLMClient  # noqa: PLC0415
 
-        endpoint = f"{self._url}/chat/completions"
-        headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
+            self._client = LLMClient(
+                base_url=self._url,
+                model=self._model,
+                api_key=self._api_key,
+                timeout_s=30.0,
+                fallback_models=self._fallback_models,
+            )
 
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0), headers=headers) as client:
-            async with client.stream("POST", endpoint, json=payload) as resp:
-                if resp.status_code != 200:
-                    body = await resp.aread()
-                    logger.warning(
-                        "ConversationEngine HTTP %d: %s", resp.status_code, body[:200]
-                    )
-                    return
-
-                async for line in resp.aiter_lines():
-                    if not line or not line.startswith("data: "):
-                        continue
-                    data = line[6:]
-                    if data.strip() == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data)
-                        delta = chunk["choices"][0]["delta"].get("content") or ""
-                        if delta:
-                            yield delta
-                    except (json.JSONDecodeError, KeyError, IndexError):
-                        continue
+        try:
+            async for token in self._client.stream_chat(
+                messages, temperature=self._temperature
+            ):
+                yield token
+        except Exception as exc:
+            # Giữ nguyên hành vi cũ: lỗi thì im lặng kết thúc luồng, tầng trên
+            # (call/dialogue.py) tự rơi sang fallback/escalate.
+            logger.warning("ConversationEngine lỗi: %s", exc)
+            return

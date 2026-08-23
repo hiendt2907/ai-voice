@@ -126,6 +126,9 @@ class LLMClient:
         self,
         messages: list[dict[str, str]],
         temperature: float = 0.1,
+        max_tokens: int | None = None,
+        response_format: dict[str, Any] | None = None,
+        timeout_s: float | None = None,
     ) -> str:
         """One-shot completion, tự chuyển model khi model hiện tại hỏng."""
         last_exc: Exception | None = None
@@ -136,9 +139,15 @@ class LLMClient:
                 "stream": False,
                 "temperature": temperature,
             }
+            if max_tokens is not None:
+                payload["max_tokens"] = max_tokens
+            if response_format is not None:
+                payload["response_format"] = response_format
             try:
                 resp = await self._client.post(
-                    f"{self._base_url}/chat/completions", json=payload
+                    f"{self._base_url}/chat/completions",
+                    json=payload,
+                    **({"timeout": timeout_s} if timeout_s is not None else {}),
                 )
                 resp.raise_for_status()
                 data = resp.json()

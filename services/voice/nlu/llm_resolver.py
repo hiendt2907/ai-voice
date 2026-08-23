@@ -11,8 +11,6 @@ import json
 import logging
 import os
 
-import httpx
-
 from nlu.intent_resolver import CLARIFY_THRESHOLD, CONFIDENT_THRESHOLD, NluResult
 from nlu.slot_extractor import extract_slots
 from runtime.session import SessionState
@@ -31,30 +29,45 @@ _OLLAMA_BASE_URL = (
 _OLLAMA_MODEL = os.getenv("LLM_NLU_MODEL", os.getenv("LLM_MODEL", "qwen2.5:1.5b"))
 _TIMEOUT_S = float(os.getenv("LLM_NLU_TIMEOUT_S", "5"))
 _LLM_API_KEY = os.getenv("XKIRO_API_KEY", "") or os.getenv("LLM_API_KEY", "")
+_FALLBACK_MODELS = [
+    m.strip() for m in os.getenv("LLM_FALLBACK_MODELS", "").split(",") if m.strip()
+]
+
+# Dùng chung LLMClient thay vì tự dựng HTTP client riêng.
+#
+# Trước đây file này gọi thẳng /v1/chat/completions bằng httpx của chính nó,
+# nên chuỗi fallback model trong llm/client.py KHÔNG áp dụng cho tầng LLM NLU —
+# đúng cái tầng chết sạch khi qwen/qwen3.5-flash trả 503. Đo thật sau khi bật
+# fallback: 7 lượt lỗi mà 0 sự kiện fallback, vì fallback nằm ở lớp file này
+# không đi qua. Giữ một đường gọi LLM duy nhất để không tái diễn.
+_client: object | None = None
+
+
+def _get_client():
+    """Khởi tạo trễ: biến môi trường phải đọc lúc chạy, không phải lúc import."""
+    global _client
+    if _client is None:
+        from llm.client import LLMClient  # noqa: PLC0415
+
+        _client = LLMClient(
+            base_url=f"{_OLLAMA_BASE_URL}/v1",
+            model=_OLLAMA_MODEL,
+            api_key=_LLM_API_KEY,
+            timeout_s=_TIMEOUT_S,
+            fallback_models=_FALLBACK_MODELS,
+        )
+    return _client
 
 
 async def _chat_json(messages: list[dict], *, max_tokens: int, temperature: float, timeout_s: float) -> str:
-    """One JSON-mode completion over the OpenAI-compatible `/v1/chat/completions`
-    endpoint. Ollama serves this alongside its native `/api/chat`, and cloud
-    providers (xKiro) serve *only* this — so using it keeps both reachable
-    from the same code path.
-    """
-    headers = {"Authorization": f"Bearer {_LLM_API_KEY}"} if _LLM_API_KEY else {}
-    async with httpx.AsyncClient(timeout=timeout_s, headers=headers) as client:
-        response = await client.post(
-            f"{_OLLAMA_BASE_URL}/v1/chat/completions",
-            json={
-                "model": _OLLAMA_MODEL,
-                "messages": messages,
-                "stream": False,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "response_format": {"type": "json_object"},
-            },
-        )
-        response.raise_for_status()
-    data = response.json()
-    return str(data["choices"][0]["message"]["content"])
+    """One JSON-mode completion, có fallback model (xem _get_client)."""
+    return await _get_client().chat(
+        messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        response_format={"type": "json_object"},
+        timeout_s=timeout_s,
+    )
 
 _SYSTEM_TEMPLATE_CONSTRAINED = """\
 Classify the LAST user message. Return JSON only.

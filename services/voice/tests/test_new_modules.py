@@ -211,36 +211,42 @@ async def test_conversation_engine_streams_tokens():
         "data: [DONE]",
     ]
 
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.aiter_lines = AsyncMock(return_value=iter(mock_response_lines))
+    # ConversationEngine giờ đi qua LLMClient (để hưởng chuỗi fallback model),
+    # nên seam để mock là httpx client BÊN TRONG LLMClient, không phải
+    # llm.conversation.httpx nữa.
+    from llm.client import LLMClient
 
-    async def mock_aiter_lines():
-        for line in mock_response_lines:
-            yield line
+    class _FakeStream:
+        def __init__(self, lines):
+            self._lines = lines
 
-    mock_resp.aiter_lines = mock_aiter_lines
+        async def __aenter__(self):
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
 
-    mock_ctx = MagicMock()
-    mock_ctx.__aenter__ = AsyncMock(return_value=mock_resp)
-    mock_ctx.__aexit__ = AsyncMock(return_value=None)
+            async def _aiter_lines():
+                for line in self._lines:
+                    yield line
 
-    mock_client = MagicMock()
-    mock_client.stream = MagicMock(return_value=mock_ctx)
+            resp.aiter_lines = _aiter_lines
+            return resp
 
-    mock_client_ctx = MagicMock()
-    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client_ctx.__aexit__ = AsyncMock(return_value=None)
+        async def __aexit__(self, *a):
+            return None
 
-    with patch("llm.conversation.httpx.AsyncClient", return_value=mock_client_ctx):
-        tokens = []
-        async for token in engine.stream_response(
-            utterance="Xin chào",
-            kb_context=None,
-            history=[],
-            emotion=emotion,
-        ):
-            tokens.append(token)
+    engine._client = LLMClient(base_url="http://x/v1", model="m", api_key="k")
+    engine._client._client.stream = MagicMock(
+        return_value=_FakeStream(mock_response_lines)
+    )
+
+    tokens = []
+    async for token in engine.stream_response(
+        utterance="Xin chào",
+        kb_context=None,
+        history=[],
+        emotion=emotion,
+    ):
+        tokens.append(token)
 
     assert "".join(tokens) == "Dạ, em xin chào"
 

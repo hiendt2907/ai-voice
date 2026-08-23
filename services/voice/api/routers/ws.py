@@ -241,6 +241,11 @@ async def call_ws(
             temperature=remote_cfg.conversation.temperature,
             max_history_turns=remote_cfg.conversation.max_history_turns,
             api_key=remote_cfg.ai.api_key,
+            fallback_models=[
+                m.strip()
+                for m in (_settings.llm_fallback_models or "").split(",")
+                if m.strip()
+            ],
         )
         logger.info(
             "ConversationEngine enabled (model=%s, sentiment=%s)",
