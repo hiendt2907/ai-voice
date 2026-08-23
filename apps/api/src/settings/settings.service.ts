@@ -1,5 +1,6 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common'
+import { HttpException, HttpStatus, Injectable, OnModuleDestroy } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
+import { ConfigService } from '@nestjs/config'
 import { Repository } from 'typeorm'
 import Redis from 'ioredis'
 import { CloudFoneSettings } from './cloudfone-settings.entity'
@@ -67,16 +68,31 @@ export class SettingsService implements OnModuleDestroy {
     private readonly doctorCheckRepo: Repository<DoctorCheckSettings>,
     @InjectRepository(ConversationSettings)
     private readonly conversationRepo: Repository<ConversationSettings>,
+    private readonly config: ConfigService,
   ) {}
 
+  /**
+   * Trả về cấu hình CloudFone đã che mật khẩu (`password: '***'`) — dùng cho
+   * mọi endpoint hướng Portal. Nội bộ (getAllSettings → voice worker) phải
+   * dùng getCloudFoneRaw() để lấy mật khẩu thật, nếu không SIP sẽ không
+   * đăng ký được. Bắt chước đúng pattern che secret đã có của tts/notify/doctorcheck.
+   */
   async getCloudFone(): Promise<CloudFoneSettings> {
+    const row = await this.getCloudFoneRaw()
+    return { ...row, password: row.password ? '***' : '' }
+  }
+
+  private async getCloudFoneRaw(): Promise<CloudFoneSettings> {
     const row = await this.cloudfoneRepo.findOne({ where: { id: DEFAULT_ID } })
-    if (!row) return this.cloudfoneRepo.create({ id: DEFAULT_ID, socket: '', port: '', realm: '', user: '', password: '' })
-    return row
+    return row ?? this.cloudfoneRepo.create({ id: DEFAULT_ID, socket: '', port: '', realm: '', user: '', password: '' })
   }
 
   async upsertCloudFone(dto: UpsertCloudFoneDto, updatedBy: string): Promise<CloudFoneSettings> {
-    return this.cloudfoneRepo.save({ id: DEFAULT_ID, ...dto, updatedBy })
+    const existing = await this.getCloudFoneRaw()
+    // '***' nghĩa là client gửi lại giá trị đã che (không đổi mật khẩu) — giữ nguyên mật khẩu cũ
+    const password = dto.password === '***' ? existing.password : dto.password
+    const saved = await this.cloudfoneRepo.save({ id: DEFAULT_ID, ...dto, password, updatedBy })
+    return { ...saved, password: saved.password ? '***' : '' }
   }
 
   async testCloudFoneConnection(): Promise<{ ok: boolean; message: string }> {
@@ -200,11 +216,25 @@ export class SettingsService implements OnModuleDestroy {
     }
   }
 
+  /**
+   * Thứ tự ưu tiên xác định base URL của voice worker: (1) bảng
+   * voice_worker_settings.internalUrl nếu admin đã cấu hình qua Portal,
+   * (2) biến môi trường VOICE_WORKER_URL (đã có sẵn trong pod, cùng pattern
+   * với nlu.service.ts / knowledge.service.ts), (3) localhost làm phương án
+   * cuối cùng. Trước đây bảng voice_worker_settings rỗng trên production nên
+   * bước (1) luôn thiếu và code nhảy thẳng xuống localhost — chính là pod
+   * API, không bao giờ reachable.
+   */
+  private async getVoiceWorkerBaseUrl(): Promise<string> {
+    const vw = await this.getVoiceWorker()
+    if (vw.internalUrl) return vw.internalUrl
+    return this.config.get<string>('VOICE_WORKER_URL', 'http://localhost:8000')
+  }
+
   async notifyVoiceWorkerConfigReload(): Promise<void> {
     try {
-      const vw = await this.getVoiceWorker()
-      const url = `${vw.internalUrl ?? 'http://localhost:8000'}/config/reload`
-      await fetch(url, { method: 'POST', signal: AbortSignal.timeout(3000) })
+      const base = await this.getVoiceWorkerBaseUrl()
+      await fetch(`${base}/config/reload`, { method: 'POST', signal: AbortSignal.timeout(3000) })
     } catch {
       // non-fatal — voice worker sẽ dùng cache TTL hoặc restart thủ công
     }
@@ -215,14 +245,16 @@ export class SettingsService implements OnModuleDestroy {
   }
 
   async getTtsHealth(): Promise<object> {
-    const vw = await this.getVoiceWorker()
-    const base = vw.internalUrl ?? 'http://localhost:8000'
+    const base = await this.getVoiceWorkerBaseUrl()
     try {
       const res = await fetch(`${base}/ws/tts-health`, { signal: AbortSignal.timeout(3000) })
       if (res.ok) return res.json() as Promise<object>
-      return { error: `voice worker returned ${res.status}` }
-    } catch {
-      return { error: 'voice worker unreachable' }
+      // Voice worker phản hồi nhưng báo lỗi — vẫn là lỗi hạ tầng, không phải kết quả thành công.
+      throw new HttpException({ error: `voice worker returned ${res.status}` }, HttpStatus.BAD_GATEWAY)
+    } catch (err) {
+      if (err instanceof HttpException) throw err
+      // Không kết nối được (timeout/DNS/refused) — trả 502, giữ trường `error` để client cũ không vỡ.
+      throw new HttpException({ error: 'voice worker unreachable' }, HttpStatus.BAD_GATEWAY)
     }
   }
 
@@ -238,8 +270,10 @@ export class SettingsService implements OnModuleDestroy {
   }
 
   async getAllSettings(): Promise<SystemSettings> {
+    // Voice worker cần mật khẩu CloudFone thật để đăng ký SIP — phải dùng bản
+    // raw (chưa che), không phải getCloudFone() công khai cho Portal.
     const [cloudfone, ai, stt, tts, notify, voiceWorker, conversation] = await Promise.all([
-      this.getCloudFone(),
+      this.getCloudFoneRaw(),
       this.getAi(),
       this.getStt(),
       this.getTtsRaw(),

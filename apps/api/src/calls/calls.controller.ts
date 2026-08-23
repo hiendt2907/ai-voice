@@ -9,6 +9,7 @@ import {
   UseGuards,
   Request,
   ParseIntPipe,
+  ParseEnumPipe,
   DefaultValuePipe,
   NotFoundException,
 } from '@nestjs/common'
@@ -20,6 +21,8 @@ import { RolesGuard } from '../auth/guards/roles.guard'
 import { Roles } from '../auth/decorators/roles.decorator'
 import { CallsService } from './calls.service'
 import { CreateQaScoreDto } from './dto/create-qa-score.dto'
+import { CALL_STATUS_VALUES } from './dto/list-call-sessions-query.dto'
+import type { CallStatus } from './call-session.entity'
 
 interface AuthRequest {
   user: { userId: string }
@@ -37,12 +40,25 @@ export class CallsController {
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'campaignId', required: false })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: CALL_STATUS_VALUES,
+    description: 'Lọc theo trạng thái cuộc gọi. Giá trị không hợp lệ trả về 400.',
+  })
   listSessions(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
     @Query('campaignId') campaignId?: string,
+    @Query(
+      'status',
+      new ParseEnumPipe(CALL_STATUS_VALUES as unknown as Record<string, CallStatus>, {
+        optional: true,
+      }),
+    )
+    status?: CallStatus,
   ) {
-    return this.svc.listSessions({ page, limit, campaignId })
+    return this.svc.listSessions({ page, limit, campaignId, status })
   }
 
   @Get('active')

@@ -56,6 +56,41 @@ def _render_step_text(step: dict, slots: dict[str, str]) -> str:
     return " ".join(out)
 
 
+def _resolves_to_graceful_close(step: dict, steps: dict[str, dict], _visited: set[str] | None = None) -> bool:
+    """Một step `speak_listen` có phải là "bước hoàn tất nghiệp vụ" hay không —
+    suy thuần từ cấu trúc script (contract v0.1 chưa có cờ terminal/outcome
+    tường minh, xem docs/call-script-contract-v0.1.md), KHÔNG hardcode step id.
+
+    Ý tưởng: khi khách cúp máy giữa một `speak_listen` mà không nói gì thêm,
+    đường đi tiếp theo mà chính kịch bản đã định sẵn cho tình huống "không có
+    phản hồi" chính là `fallback_goto` (dùng khi hết `max_no_match`). Nếu
+    chuỗi fallback đó — có thể đi qua vài step "speak" trung gian — cuối cùng
+    dẫn tới một step "speak"/"hangup" (một lời tạm biệt/kết thúc cuộc gọi),
+    nghĩa là kịch bản coi việc khách không phản hồi thêm ở đây vẫn là một kết
+    thúc BÌNH THƯỜNG, không cần chuyển người thật xử lý tiếp — ví dụ điển hình
+    là step báo "đặt lịch xong" rồi hỏi "còn cần hỗ trợ gì không", fallback về
+    "farewell" (type speak) khi khách im lặng.
+
+    Ngược lại, nếu fallback dẫn tới "handoff" (hoặc không có fallback_goto),
+    tức là kịch bản coi việc khách không phản hồi thêm ở đây là cần con người
+    xử lý — khách cúp máy ở đây là dở dang thật sự, phải giữ nguyên "error".
+    """
+    visited = _visited if _visited is not None else set()
+    fallback_id = step.get("fallback_goto")
+    if not fallback_id or fallback_id in visited:
+        return False
+    visited.add(fallback_id)
+    next_step = steps.get(fallback_id)
+    if next_step is None:
+        return False
+    next_type = next_step.get("type", "")
+    if next_type in ("speak", "hangup"):
+        return True
+    if next_type == "speak_listen":
+        return _resolves_to_graceful_close(next_step, steps, visited)
+    return False
+
+
 _QUESTION_RE = re.compile(
     r"\?$"
     r"|\b(bao nhiêu|mấy tiếng|như thế nào|ra sao|thế nào|là gì|ở đâu|khi nào|làm gì|cần gì)\b"
@@ -342,6 +377,28 @@ class TurnOrchestrator:
             self.state = self.state.with_status("completed")
         elif landed_type == "handoff" and self.state is not None:
             self.state = self.state.with_status("handoff")
+        elif (
+            landed_type == "speak_listen"
+            and self.state is not None
+            and _resolves_to_graceful_close(step, self.ctx.steps)
+        ):
+            # Bước speak_listen này đã đạt kết quả nghiệp vụ mong muốn (ví dụ
+            # đặt lịch xong, giờ chỉ hỏi "còn cần gì thêm không") — xem
+            # _resolves_to_graceful_close() để biết tiêu chí suy ra từ cấu
+            # trúc script. Đặt "completed" NGAY khi vừa landing, TRƯỚC khi
+            # nghe phản hồi tiếp theo của khách, vì:
+            #   - nếu khách cúp máy ở đây (hoặc bất cứ đâu trên chuỗi
+            #     fallback "speak" phía sau) mà không nói gì thêm, trạng thái
+            #     đã đúng sẵn — không phụ thuộc việc _stream_step() có kịp
+            #     phát hết audio hay bị WebSocketDisconnect giữa chừng hay
+            #     không (cùng lý do với nhánh "speak"/"hangup" ở trên).
+            #   - nếu khách NÓI TIẾP và cuộc gọi rẽ sang một step khác ở lượt
+            #     sau (ví dụ yêu cầu gặp nhân viên → handoff_to_staff), nhánh
+            #     tương ứng ở lượt turn kế tiếp sẽ ghi đè lại status đúng
+            #     ("handoff" hoặc "completed" khác) — không có rủi ro
+            #     "completed" giả treo lại khi cuộc gọi thực ra còn tiếp diễn
+            #     và kết thúc khác đi.
+            self.state = self.state.with_status("completed")
 
         await self._stream_step(step, dict(self.state.slots), no_match, t_start)
 

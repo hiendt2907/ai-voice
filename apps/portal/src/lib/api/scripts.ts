@@ -1,4 +1,6 @@
-import { apiFetch } from './client'
+// Các hàm gọi API (listCampaigns, getCampaign, listVersions, validateScript) đã bị xoá:
+// xác nhận bằng grep toàn bộ src/ không còn nơi nào import/gọi chúng — code chết hoàn toàn.
+// Các type/interface dưới đây vẫn được import trực tiếp ở nhiều trang scripts/*, giữ nguyên.
 
 export interface Campaign {
   id: string
@@ -39,24 +41,4 @@ export interface LintResult {
   valid: boolean
   errors: LintError[]
   warnings: LintError[]
-}
-
-export function listCampaigns(token?: string) {
-  return apiFetch<Campaign[]>('/scripts', token ? { headers: { Authorization: `Bearer ${token}` } } : undefined)
-}
-
-export function getCampaign(id: string, token?: string) {
-  return apiFetch<Campaign>(`/scripts/${id}`, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined)
-}
-
-export function listVersions(campaignId: string, token?: string) {
-  return apiFetch<ScriptVersion[]>(`/scripts/${campaignId}/versions`, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined)
-}
-
-export function validateScript(body: Record<string, unknown>, token?: string) {
-  return apiFetch<LintResult>('/scripts/validate', {
-    method: 'POST',
-    body: JSON.stringify({ body }),
-    ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
-  })
 }

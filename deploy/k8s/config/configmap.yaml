@@ -68,3 +68,31 @@ data:
 
   # CloudFone ODS — still pending real schema, mock mode
   USE_REAL_ODS: "false"
+
+  # Escalation "bác sĩ gọi lại" qua Telegram (services/voice/call/handoff.py,
+  # settings.telegram_bot_token / settings.telegram_group_id trong
+  # api/config.py — pydantic-settings map thẳng từ 2 biến này).
+  # ĐANG ĐỂ TRỐNG CÓ CHỦ ĐÍCH: chưa có bot Telegram thật nào được cấp cho hệ
+  # thống này. Không được đoán/tạo giá trị giả — token giả sẽ khiến handoff.py
+  # tưởng đã cấu hình xong rồi gọi Telegram API thất bại âm thầm (best-effort,
+  # xem call/handoff.py:79), còn nguy hiểm hơn im lặng bỏ qua như hiện tại.
+  # Người vận hành cần cung cấp:
+  #   - TELEGRAM_BOT_TOKEN: token bot thật (từ @BotFather), nên cân nhắc đưa
+  #     vào k8s Secret (vd. ai-voice-secrets) thay vì ConfigMap dạng plaintext
+  #     một khi có giá trị thật — ConfigMap không mã hoá at-rest.
+  #   - TELEGRAM_GROUP_ID: id nhóm/chat Telegram nơi bác sĩ trực nhận thông báo.
+  # Có thể set qua Portal (Settings → Notify, bảng notify_settings) — giá trị
+  # đó được remote_config.py ưu tiên hơn nếu tồn tại; 2 biến dưới đây chỉ là
+  # phương án dự phòng khi bảng notify_settings vẫn rỗng.
+  # Token/chat id thật nạp từ Vault (secret/ai-voice-secrets) qua ExternalSecret;
+  # secretRef đứng SAU configMapRef trong deployment nên giá trị Vault thắng.
+  TELEGRAM_BOT_TOKEN: ""
+  TELEGRAM_GROUP_ID: ""
+
+  # Base URL công khai để dựng link trả lời trong thông báo Telegram.
+  # ĐỂ TRỐNG CÓ CHỦ ĐÍCH: hiện chưa có route public nào tới /callbacks của voice
+  # worker (ingress chỉ expose portal + api), và endpoint đó là POST nên nút
+  # inline dạng url bấm vào cũng chỉ ra 405. Điền URL nội bộ vào đây sẽ khiến
+  # Telegram trả 400 "Wrong HTTP URL" và mất TOÀN BỘ thông báo. Trống = gửi tin
+  # nhắn trơn, bác sĩ vẫn nhận được câu hỏi để gọi lại cho khách.
+  PUBLIC_CALLBACK_BASE_URL: ""

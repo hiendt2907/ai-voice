@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Cpu } from 'lucide-react'
 import { Field, NumberField } from './Field'
-import { SectionFooter, SectionSkeleton, StatusDot, Meta } from './CloudFoneSection'
+import { SectionFooter, SectionSkeleton, StatusDot, Meta, LoadErrorBanner } from './CloudFoneSection'
 
 interface AiSettings {
   ollamaBaseUrl: string
@@ -33,6 +33,7 @@ export function AiSection() {
   const [loading, setLoading] = useState(true)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
     void (async () => {
@@ -42,7 +43,13 @@ export function AiSection() {
           const data = (await res.json()) as AiSettings
           setForm(data)
           setMeta({ updatedBy: data.updatedBy, updatedAt: data.updatedAt })
+        } else {
+          // Load thất bại: không cho phép bấm Lưu khi form đang là giá trị mặc định,
+          // tránh ghi đè cấu hình thật bằng dữ liệu rỗng/mặc định.
+          setLoadError(`Không thể tải cấu hình hiện tại (HTTP ${res.status}). Vui lòng tải lại trang trước khi lưu.`)
         }
+      } catch {
+        setLoadError('Không thể kết nối máy chủ để tải cấu hình. Vui lòng kiểm tra mạng và tải lại trang trước khi lưu.')
       } finally {
         setLoading(false)
       }
@@ -101,6 +108,7 @@ export function AiSection() {
       </div>
 
       <div className="px-6 py-6 space-y-5">
+        <LoadErrorBanner message={loadError} />
         <Field label="LLM Base URL" hint="OpenAI-compatible endpoint — Ollama: http://localhost:11434/v1 · DashScope: https://dashscope.aliyuncs.com/compatible-mode/v1 · Claude: dùng anthropic SDK riêng" value={form.ollamaBaseUrl} onChange={(v) => set('ollamaBaseUrl', v)} placeholder="http://localhost:11434/v1" />
         <Field label="Model" hint="Tên model ngôn ngữ. Claude Haiku 4.5: nhanh, rẻ, đủ cho slot extraction. Qwen2.5: local, không cần internet" value={form.ollamaModel} onChange={(v) => set('ollamaModel', v)} placeholder="qwen2.5:latest" />
         <div className="grid grid-cols-2 gap-4">
@@ -117,7 +125,7 @@ export function AiSection() {
         <Meta updatedAt={meta?.updatedAt} updatedBy={meta?.updatedBy} />
       </div>
 
-      <SectionFooter saveStatus={saveStatus} errorMsg={errorMsg} onSave={() => void handleSave()} />
+      <SectionFooter saveStatus={saveStatus} errorMsg={errorMsg} onSave={() => void handleSave()} saveDisabled={!!loadError} />
     </div>
   )
 }

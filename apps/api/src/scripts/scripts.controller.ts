@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Patch, Delete, Param, Body, UseGuards, Request, HttpCode } from '@nestjs/common'
+import { Controller, Get, Post, Put, Patch, Delete, Param, ParseUUIDPipe, Body, UseGuards, Request, HttpCode } from '@nestjs/common'
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
@@ -46,27 +46,32 @@ export class ScriptsController {
     return campaign
   }
 
+  // ParseUUIDPipe validate id trước khi tới service — tránh lỗi cast UUID của
+  // Postgres rơi thẳng ra 500. Các route tĩnh 'voice-profiles' bên dưới nằm
+  // SAU các route ':id' này trong cùng controller, nhưng NestJS luôn ưu tiên
+  // khớp route tĩnh trước route tham số (đã kiểm chứng bằng curl thật —
+  // GET /scripts/voice-profiles vẫn trả đúng danh sách, không rơi vào :id).
   @Get(':id')
   @ApiOperation({ summary: 'Get campaign with all versions' })
-  getCampaign(@Param('id') id: string) {
+  getCampaign(@Param('id', ParseUUIDPipe) id: string) {
     return this.svc.getCampaign(id)
   }
 
   @Get(':id/related')
   @ApiOperation({ summary: 'Get KB articles and NLU docs related to this script' })
-  getRelated(@Param('id') id: string) {
+  getRelated(@Param('id', ParseUUIDPipe) id: string) {
     return this.svc.getRelated(id)
   }
 
   @Get(':id/active')
   @ApiOperation({ summary: 'Get active (published) script body for campaign' })
-  getActive(@Param('id') id: string) {
+  getActive(@Param('id', ParseUUIDPipe) id: string) {
     return this.svc.getActiveScript(id)
   }
 
   @Get(':id/versions')
   @ApiOperation({ summary: 'List all versions for campaign' })
-  listVersions(@Param('id') id: string) {
+  listVersions(@Param('id', ParseUUIDPipe) id: string) {
     return this.svc.listVersions(id)
   }
 
@@ -74,7 +79,7 @@ export class ScriptsController {
   @Roles('admin', 'operator')
   @ApiOperation({ summary: 'Create a new draft version (validates before saving)' })
   async createVersion(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateVersionDto,
     @Request() req: AuthRequest,
   ) {
@@ -87,7 +92,7 @@ export class ScriptsController {
   @Roles('admin', 'operator')
   @ApiOperation({ summary: 'Submit draft version for QA review' })
   async submitReview(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Param('version') version: string,
     @Request() req: AuthRequest,
   ) {
@@ -100,7 +105,7 @@ export class ScriptsController {
   @Roles('admin')
   @ApiOperation({ summary: 'Publish a reviewed version (admin only)' })
   async publish(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Param('version') version: string,
     @Request() req: AuthRequest,
   ) {
@@ -113,7 +118,7 @@ export class ScriptsController {
   @Roles('admin')
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete campaign and all its versions (admin only)' })
-  async deleteCampaign(@Param('id') id: string, @Request() req: AuthRequest) {
+  async deleteCampaign(@Param('id', ParseUUIDPipe) id: string, @Request() req: AuthRequest) {
     await this.svc.deleteCampaign(id)
     void this.audit.log({ actorId: req.user.userId, actorEmail: req.user.email, action: 'delete', entity: 'campaign', entityId: id, diff: {} })
   }
@@ -122,7 +127,7 @@ export class ScriptsController {
   @Roles('admin', 'operator')
   @ApiOperation({ summary: 'Patch campaign (toggle isActive)' })
   async patchCampaign(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: PatchCampaignDto,
     @Request() req: AuthRequest,
   ) {
@@ -141,7 +146,7 @@ export class ScriptsController {
 
   @Get('voice-profiles/:id')
   @ApiOperation({ summary: 'Get voice profile by id' })
-  getVoiceProfile(@Param('id') id: string) {
+  getVoiceProfile(@Param('id', ParseUUIDPipe) id: string) {
     return this.svc.getVoiceProfile(id)
   }
 
@@ -155,7 +160,7 @@ export class ScriptsController {
   @Put('voice-profiles/:id')
   @Roles('admin')
   @ApiOperation({ summary: 'Update voice profile (admin only)' })
-  updateVoiceProfile(@Param('id') id: string, @Body() dto: UpsertVoiceProfileDto) {
+  updateVoiceProfile(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpsertVoiceProfileDto) {
     return this.svc.updateVoiceProfile(id, dto)
   }
 
@@ -163,7 +168,14 @@ export class ScriptsController {
   @Roles('admin')
   @HttpCode(204)
   @ApiOperation({ summary: 'Deactivate voice profile (admin only)' })
-  deactivateVoiceProfile(@Param('id') id: string) {
+  deactivateVoiceProfile(@Param('id', ParseUUIDPipe) id: string) {
     return this.svc.deactivateVoiceProfile(id)
+  }
+
+  @Post('voice-profiles/:id/preview')
+  @Roles('admin')
+  @ApiOperation({ summary: 'Tổng hợp thử một câu mẫu bằng giọng của voice profile (admin only)' })
+  previewVoiceProfile(@Param('id', ParseUUIDPipe) id: string) {
+    return this.svc.previewVoiceProfile(id)
   }
 }

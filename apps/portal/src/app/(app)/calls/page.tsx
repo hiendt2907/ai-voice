@@ -1,6 +1,8 @@
 import Link from 'next/link'
-import { Phone, PhoneIncoming, PhoneOutgoing, Clock, CheckCircle2, AlertCircle, ArrowLeftRight, X } from 'lucide-react'
+import { Phone, PhoneIncoming, PhoneOutgoing, Clock, CheckCircle2, AlertCircle, ArrowLeftRight, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { serverFetch } from '@/lib/api/server'
+
+const PAGE_SIZE = 20
 
 type CallStatus = 'active' | 'completed' | 'handoff' | 'error'
 
@@ -52,8 +54,17 @@ export default async function CallsPage({
 }) {
   const params = await searchParams
   const status = params.status
-  const page = Number(params.page ?? 1)
+  const page = Math.max(1, Number(params.page ?? 1) || 1)
   const { data: calls, total } = await fetchCalls(page, status)
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  // Giữ nguyên status khi chuyển trang.
+  function pageHref(targetPage: number): string {
+    const qp = new URLSearchParams()
+    qp.set('page', String(targetPage))
+    if (status) qp.set('status', status)
+    return `/calls?${qp.toString()}`
+  }
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
@@ -152,6 +163,39 @@ export default async function CallsPage({
             </tbody>
           </table>
           </div>
+
+          {/* Phân trang — giữ nguyên bộ lọc status trong URL khi chuyển trang */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--color-border)] bg-[var(--color-surface-overlay)]">
+              <Link
+                href={pageHref(Math.max(1, page - 1))}
+                aria-disabled={page <= 1}
+                className={`inline-flex items-center gap-1 text-xs font-medium ${
+                  page <= 1
+                    ? 'pointer-events-none text-[var(--color-text-muted)] opacity-50'
+                    : 'text-[var(--color-text)] hover:text-[var(--color-accent)]'
+                }`}
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                Trang trước
+              </Link>
+              <span className="text-xs text-[var(--color-text-muted)]">
+                Trang {page} / {totalPages} ({total} cuộc gọi)
+              </span>
+              <Link
+                href={pageHref(Math.min(totalPages, page + 1))}
+                aria-disabled={page >= totalPages}
+                className={`inline-flex items-center gap-1 text-xs font-medium ${
+                  page >= totalPages
+                    ? 'pointer-events-none text-[var(--color-text-muted)] opacity-50'
+                    : 'text-[var(--color-text)] hover:text-[var(--color-accent)]'
+                }`}
+              >
+                Trang sau
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          )}
         </div>
       )}
     </div>

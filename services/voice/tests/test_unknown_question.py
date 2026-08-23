@@ -234,3 +234,49 @@ async def test_after_hours_hint_after_22h():
     hour = 22
     hint = "sáng mai" if hour >= 22 or hour < 7 else "khoảng 15 phút nữa"
     assert hint == "sáng mai"
+
+
+# ---------------------------------------------------------------------------
+# Nút inline chỉ được đính khi có callback URL công khai
+# ---------------------------------------------------------------------------
+
+
+async def test_telegram_send_omits_button_without_callback_url():
+    """Không có URL public → gửi tin nhắn trơn.
+
+    Telegram trả 400 "Wrong HTTP URL" cho nút inline trỏ vào host nội bộ và
+    huỷ CẢ request — đính nút bừa sẽ làm mất luôn thông báo tới bác sĩ.
+    """
+    from unittest.mock import AsyncMock, MagicMock, patch  # noqa: PLC0415
+
+    notifier = TelegramNotifier(bot_token="abc:TOKEN", group_id="-123")
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {"ok": True, "result": {"message_id": 7}}
+    post = AsyncMock(return_value=mock_resp)
+
+    with patch.object(notifier._client, "post", new=post):
+        msg_id = await notifier.send("Câu hỏi", "session-1", None)
+
+    assert msg_id == "7"
+    payload = post.await_args.kwargs["json"]
+    assert "reply_markup" not in payload
+    assert "Câu hỏi" in payload["text"]
+    await notifier.aclose()
+
+
+async def test_telegram_send_includes_button_with_public_url():
+    from unittest.mock import AsyncMock, MagicMock, patch  # noqa: PLC0415
+
+    notifier = TelegramNotifier(bot_token="abc:TOKEN", group_id="-123")
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {"ok": True, "result": {"message_id": 8}}
+    post = AsyncMock(return_value=mock_resp)
+
+    with patch.object(notifier._client, "post", new=post):
+        await notifier.send("Câu hỏi", "s1", "https://aivoice.asia/callbacks/question/s1/q1")
+
+    button = post.await_args.kwargs["json"]["reply_markup"]["inline_keyboard"][0][0]
+    assert button["url"] == "https://aivoice.asia/callbacks/question/s1/q1"
+    await notifier.aclose()

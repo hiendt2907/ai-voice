@@ -1,4 +1,5 @@
-import { ScrollText, Clock, User, Database } from 'lucide-react'
+import Link from 'next/link'
+import { ScrollText, Clock, User, Database, ChevronLeft, ChevronRight } from 'lucide-react'
 import { serverFetch } from '@/lib/api/server'
 
 interface AuditEvent {
@@ -11,12 +12,15 @@ interface AuditEvent {
   createdAt: string
 }
 
-async function fetchAuditEvents(): Promise<AuditEvent[]> {
+const PAGE_SIZE = 50
+
+// Backend /audit nhận limit/offset (không phải page), xem apps/api/src/audit/audit.controller.ts —
+// đã kiểm chứng bằng curl thật trước khi viết hàm này.
+async function fetchAuditEvents(offset: number): Promise<{ data: AuditEvent[]; total: number }> {
   try {
-    const res = await serverFetch<{ data: AuditEvent[]; total: number }>('/audit?limit=50')
-    return res.data
+    return await serverFetch<{ data: AuditEvent[]; total: number }>(`/audit?limit=${PAGE_SIZE}&offset=${offset}`)
   } catch {
-    return []
+    return { data: [], total: 0 }
   }
 }
 
@@ -33,15 +37,23 @@ function actionStyle(action: string) {
   return key ? ACTION_STYLE[key] : 'bg-[var(--color-surface-overlay)] text-[var(--color-text-muted)] border-[var(--color-border)]'
 }
 
-export default async function AuditPage() {
-  const events = await fetchAuditEvents()
+export default async function AuditPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>
+}) {
+  const params = await searchParams
+  const page = Math.max(1, Number(params.page ?? 1) || 1)
+  const offset = (page - 1) * PAGE_SIZE
+  const { data: events, total } = await fetchAuditEvents(offset)
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-[var(--color-text)] tracking-tight">Audit Log</h1>
         <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          Lịch sử mọi thay đổi trong hệ thống — {events.length} sự kiện gần nhất
+          Lịch sử mọi thay đổi trong hệ thống — {total} sự kiện, trang {page}/{totalPages}
         </p>
       </div>
 
@@ -107,6 +119,39 @@ export default async function AuditPage() {
             </tbody>
           </table>
           </div>
+
+          {/* Phân trang */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--color-border)] bg-[var(--color-surface-overlay)]">
+              <Link
+                href={`/audit?page=${Math.max(1, page - 1)}`}
+                aria-disabled={page <= 1}
+                className={`inline-flex items-center gap-1 text-xs font-medium ${
+                  page <= 1
+                    ? 'pointer-events-none text-[var(--color-text-muted)] opacity-50'
+                    : 'text-[var(--color-text)] hover:text-[var(--color-accent)]'
+                }`}
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                Trang trước
+              </Link>
+              <span className="text-xs text-[var(--color-text-muted)]">
+                Trang {page} / {totalPages}
+              </span>
+              <Link
+                href={`/audit?page=${Math.min(totalPages, page + 1)}`}
+                aria-disabled={page >= totalPages}
+                className={`inline-flex items-center gap-1 text-xs font-medium ${
+                  page >= totalPages
+                    ? 'pointer-events-none text-[var(--color-text-muted)] opacity-50'
+                    : 'text-[var(--color-text)] hover:text-[var(--color-accent)]'
+                }`}
+              >
+                Trang sau
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          )}
         </div>
       )}
     </div>

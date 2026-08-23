@@ -37,7 +37,7 @@ const EMPTY_FORM: ProfileForm = {
   displayName: '',
   gender: 'female',
   region: 'south',
-  ttsEngine: 'elevenlabs',
+  ttsEngine: 'xkiro',
   elevenlabsVoiceId: '',
   stabilityFactor: 0.6,
   similarityBoost: 0.75,
@@ -58,8 +58,8 @@ const REGION_OPTIONS = [
 ]
 
 const ENGINE_OPTIONS = [
-  { value: 'elevenlabs', label: 'ElevenLabs' },
-  { value: 'gwen-tts', label: 'gwen-tts (local)' },
+  { value: 'xkiro', label: 'xKiro' },
+  { value: 'edge-tts', label: 'edge-tts (local)' },
 ]
 
 export function VoiceProfilesSection() {
@@ -69,12 +69,22 @@ export function VoiceProfilesSection() {
   const [form, setForm] = useState<ProfileForm>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [previewLoading, setPreviewLoading] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [previewError, setPreviewError] = useState<{ profileId: string; message: string } | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   async function load() {
+    setLoadError(null)
     try {
       const res = await fetch('/api/v1/scripts/voice-profiles')
-      if (res.ok) setProfiles((await res.json()) as VoiceProfile[])
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { message?: string }
+        throw new Error(body.message ?? `HTTP ${res.status}`)
+      }
+      setProfiles((await res.json()) as VoiceProfile[])
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : 'Không thể kết nối tới server')
     } finally {
       setLoading(false)
     }
@@ -114,6 +124,7 @@ export function VoiceProfilesSection() {
 
   async function handleSave() {
     setSaving(true)
+    setSaveError(null)
     try {
       const body = {
         ...form,
@@ -130,10 +141,14 @@ export function VoiceProfilesSection() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      if (res.ok) {
-        await load()
-        cancelEdit()
+      if (!res.ok) {
+        const errBody = (await res.json().catch(() => ({}))) as { message?: string }
+        throw new Error(errBody.message ?? `HTTP ${res.status}`)
       }
+      await load()
+      cancelEdit()
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Không thể kết nối tới server')
     } finally {
       setSaving(false)
     }
@@ -141,9 +156,13 @@ export function VoiceProfilesSection() {
 
   async function handlePreview(profileId: string) {
     setPreviewLoading(profileId)
+    setPreviewError(null)
     try {
       const res = await fetch(`/api/v1/scripts/voice-profiles/${profileId}/preview`, { method: 'POST' })
-      if (!res.ok) return
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { message?: string }
+        throw new Error(body.message ?? `HTTP ${res.status}`)
+      }
       const { audioBase64 } = (await res.json()) as { audioBase64: string }
       const binary = atob(audioBase64)
       const bytes = new Uint8Array(binary.length)
@@ -154,6 +173,11 @@ export function VoiceProfilesSection() {
         audioRef.current.src = url
         void audioRef.current.play()
       }
+    } catch (e) {
+      setPreviewError({
+        profileId,
+        message: e instanceof Error ? e.message : 'Không thể kết nối tới server',
+      })
     } finally {
       setPreviewLoading(null)
     }
@@ -179,6 +203,12 @@ export function VoiceProfilesSection() {
         </button>
       </div>
 
+      {loadError && (
+        <div className="rounded-lg bg-[oklch(97%_0.04_27)] border border-[oklch(88%_0.08_27)] text-[oklch(42%_0.2_27)] text-sm px-4 py-3">
+          {loadError}
+        </div>
+      )}
+
       {/* New profile form */}
       {editingId === 'new' && (
         <ProfileFormPanel
@@ -187,6 +217,7 @@ export function VoiceProfilesSection() {
           onSave={() => void handleSave()}
           onCancel={cancelEdit}
           saving={saving}
+          errorMsg={saveError}
         />
       )}
 
@@ -232,6 +263,10 @@ export function VoiceProfilesSection() {
             </div>
           </div>
 
+          {previewError?.profileId === profile.id && (
+            <p className="px-5 pb-3 text-xs text-[oklch(42%_0.2_27)]">{previewError.message}</p>
+          )}
+
           {editingId === profile.id && (
             <div className="border-t border-[var(--color-border)] px-5 py-4">
               <ProfileFormPanel
@@ -240,6 +275,7 @@ export function VoiceProfilesSection() {
                 onSave={() => void handleSave()}
                 onCancel={cancelEdit}
                 saving={saving}
+                errorMsg={saveError}
               />
             </div>
           )}
@@ -255,15 +291,22 @@ function ProfileFormPanel({
   onSave,
   onCancel,
   saving,
+  errorMsg,
 }: {
   form: ProfileForm
   set: <K extends keyof ProfileForm>(field: K, value: ProfileForm[K]) => void
   onSave: () => void
   onCancel: () => void
   saving: boolean
+  errorMsg?: string | null
 }) {
   return (
     <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-overlay)] p-5 space-y-4">
+      {errorMsg && (
+        <div className="rounded-lg bg-[oklch(97%_0.04_27)] border border-[oklch(88%_0.08_27)] text-[oklch(42%_0.2_27)] text-sm px-4 py-3">
+          {errorMsg}
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-4">
         <Field
           label="Tên hiển thị"

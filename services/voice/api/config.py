@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_group_id: str = ""
     voice_worker_base_url: str = "http://localhost:8000"
+    # Base URL công khai để dựng link trả lời gửi kèm thông báo Telegram.
+    # PHẢI tách khỏi voice_worker_base_url: cái đó là địa chỉ nội bộ trong
+    # cluster (http://voice:8000), Telegram từ chối thẳng URL như vậy trong
+    # nút inline ("Wrong HTTP URL") khiến TOÀN BỘ thông báo thất bại, không
+    # chỉ mất mỗi cái nút. Để trống thì gửi tin nhắn không kèm nút.
+    public_callback_base_url: str = ""
     question_timeout_seconds: int = 60
 
     # CloudFone ODS

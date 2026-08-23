@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Bell, Eye, EyeOff, Send, Globe } from 'lucide-react'
 import { Field, SelectField, NumberField } from './Field'
-import { SectionFooter, SectionSkeleton, StatusDot, Meta } from './CloudFoneSection'
+import { SectionFooter, SectionSkeleton, StatusDot, Meta, LoadErrorBanner } from './CloudFoneSection'
 
 interface NotifySettings {
   platform: string
@@ -34,6 +34,7 @@ export function NotifySection() {
   const [loading, setLoading] = useState(true)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+  const [loadError, setLoadError] = useState('')
   const [showToken, setShowToken] = useState(false)
 
   useEffect(() => {
@@ -44,7 +45,13 @@ export function NotifySection() {
           const data = (await res.json()) as NotifySettings
           setForm(data)
           setMeta({ updatedBy: data.updatedBy, updatedAt: data.updatedAt })
+        } else {
+          // Load thất bại: không cho phép bấm Lưu khi form đang là giá trị mặc định,
+          // tránh ghi đè cấu hình thật bằng dữ liệu rỗng/mặc định.
+          setLoadError(`Không thể tải cấu hình hiện tại (HTTP ${res.status}). Vui lòng tải lại trang trước khi lưu.`)
         }
+      } catch {
+        setLoadError('Không thể kết nối máy chủ để tải cấu hình. Vui lòng kiểm tra mạng và tải lại trang trước khi lưu.')
       } finally {
         setLoading(false)
       }
@@ -114,6 +121,7 @@ export function NotifySection() {
       </div>
 
       <div className="px-6 py-6 space-y-6">
+        <LoadErrorBanner message={loadError} />
         <SelectField
           label="Kênh thông báo"
           hint="Chọn nền tảng nhận thông báo khi AI không trả lời được"
@@ -237,7 +245,7 @@ export function NotifySection() {
         <Meta updatedAt={meta?.updatedAt} updatedBy={meta?.updatedBy} />
       </div>
 
-      <SectionFooter saveStatus={saveStatus} errorMsg={errorMsg} onSave={() => void handleSave()} />
+      <SectionFooter saveStatus={saveStatus} errorMsg={errorMsg} onSave={() => void handleSave()} saveDisabled={!!loadError} />
     </div>
   )
 }

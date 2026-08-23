@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Download, Loader2 } from 'lucide-react'
+import { Download, Loader2, AlertTriangle } from 'lucide-react'
 
 type QuickRange = 'today' | '7d' | '30d' | 'custom'
 
@@ -86,23 +86,42 @@ export function ReportsClient({ initialCallsByDay, initialQaTrends, initialDurat
   const [duration, setDuration] = useState(initialDuration)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   function getRange() {
     if (quick === 'custom') return { from: customFrom, to: customTo }
     return rangeForQuick(quick)
   }
 
+  // Gọi 1 endpoint, kiểm tra res.ok VÀ kiểm tra body thật sự là mảng — API trả lỗi (401/500) vẫn
+  // trả JSON hợp lệ dạng { message, statusCode }, nếu không kiểm tra kiểu thì .map() phía dưới sẽ
+  // ném lỗi runtime và làm trắng trang.
+  async function fetchArray<T>(url: string, label: string): Promise<T[]> {
+    const res = await fetch(url)
+    if (!res.ok) {
+      throw new Error(`Không tải được ${label} (mã lỗi ${res.status})`)
+    }
+    const body = await res.json()
+    if (!Array.isArray(body)) {
+      throw new Error(`Dữ liệu ${label} trả về không đúng định dạng`)
+    }
+    return body as T[]
+  }
+
   async function fetchData(from: string, to: string) {
     setLoading(true)
+    setError(null)
     try {
       const [cbd, qat, dur] = await Promise.all([
-        fetch(`/api/v1/analytics/calls-by-day?from=${from}&to=${to}`).then((r) => r.json()),
-        fetch(`/api/v1/analytics/qa-trends?from=${from}&to=${to}`).then((r) => r.json()),
-        fetch(`/api/v1/analytics/duration?from=${from}&to=${to}`).then((r) => r.json()),
+        fetchArray<DayData>(`/api/v1/analytics/calls-by-day?from=${from}&to=${to}`, 'cuộc gọi theo ngày'),
+        fetchArray<QaTrend>(`/api/v1/analytics/qa-trends?from=${from}&to=${to}`, 'điểm QA theo tuần'),
+        fetchArray<DurationStat>(`/api/v1/analytics/duration?from=${from}&to=${to}`, 'thời lượng cuộc gọi'),
       ])
-      setCallsByDay(cbd as DayData[])
-      setQaTrends(qat as QaTrend[])
-      setDuration(dur as DurationStat[])
+      setCallsByDay(cbd)
+      setQaTrends(qat)
+      setDuration(dur)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Không tải được dữ liệu báo cáo')
     } finally {
       setLoading(false)
     }
@@ -122,10 +141,14 @@ export function ReportsClient({ initialCallsByDay, initialQaTrends, initialDurat
 
   async function handleExport() {
     setExporting(true)
+    setError(null)
     try {
       const { from, to } = getRange()
       const res = await fetch(`/api/v1/analytics/export?from=${from}&to=${to}`, { credentials: 'include' })
-      if (!res.ok) return
+      if (!res.ok) {
+        setError(`Xuất báo cáo thất bại (mã lỗi ${res.status})`)
+        return
+      }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -133,6 +156,8 @@ export function ReportsClient({ initialCallsByDay, initialQaTrends, initialDurat
       a.download = `analytics_${from}_${to}.xlsx`
       a.click()
       URL.revokeObjectURL(url)
+    } catch {
+      setError('Xuất báo cáo thất bại — không kết nối được tới máy chủ')
     } finally {
       setExporting(false)
     }
@@ -153,6 +178,13 @@ export function ReportsClient({ initialCallsByDay, initialQaTrends, initialDurat
           Analytics — {totalCalls} cuộc gọi · QA trung bình {avgScore}/5
         </p>
       </div>
+
+      {error && (
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-[oklch(88%_0.08_27)] bg-[oklch(97%_0.04_27)] p-4">
+          <AlertTriangle className="w-4 h-4 text-[var(--color-danger)] shrink-0 mt-0.5" />
+          <p className="text-xs text-[oklch(42%_0.2_27)]">{error}</p>
+        </div>
+      )}
 
       {/* Date range controls */}
       <div className="flex flex-wrap items-center gap-2 mb-6">

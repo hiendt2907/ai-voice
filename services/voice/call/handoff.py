@@ -71,9 +71,15 @@ class HandoffCoordinator:
         )
         self.owner.state = self.owner.state.with_pending_question(q)
 
+        # Chỉ dựng link trả lời khi có base URL công khai. voice_worker_base_url
+        # là địa chỉ nội bộ cluster — Telegram từ chối nguyên request nếu nút
+        # inline trỏ vào đó, làm mất luôn thông báo.
+        public_base = getattr(self.settings, "public_callback_base_url", "") or ""
         callback_url = (
-            f"{self.settings.voice_worker_base_url}/callbacks/question"
+            f"{public_base.rstrip('/')}/callbacks/question"
             f"/{self.ctx.session_id}/{question_id}"
+            if public_base
+            else None
         )
 
         if self.settings.notify_platform == "telegram" and self.settings.telegram_bot_token:

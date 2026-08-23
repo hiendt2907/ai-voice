@@ -17,6 +17,7 @@ import {
   BookOpen,
   Zap,
   HelpCircle,
+  FlaskConical,
 } from 'lucide-react'
 
 type NavItem = {
@@ -31,6 +32,7 @@ const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/scripts', label: 'Script CMS', icon: FileText, roles: ['admin', 'operator'] },
   { href: '/knowledge', label: 'Knowledge Base', icon: BookOpen, roles: ['admin', 'operator'] },
+  { href: '/knowledge/test', label: 'Kiểm thử RAG', icon: FlaskConical, roles: ['admin', 'operator'] },
   { href: '/nlu', label: 'NLU Content', icon: Zap, roles: ['admin', 'operator'] },
   { href: '/calls', label: 'Cuộc gọi', icon: Phone, roles: ['admin', 'operator', 'qa'] },
   { href: '/qa', label: 'QA Review', icon: Star, roles: ['admin', 'qa'] },

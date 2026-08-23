@@ -1,4 +1,6 @@
-const API_BASE = process.env.API_INTERNAL_URL ?? 'http://localhost:3001/api/v1'
+// Khớp cách ghép URL với lib/api/server.ts — biến môi trường trong cluster
+// (deploy/k8s/config/configmap.yaml) là API_INTERNAL_URL=http://api:3001, KHÔNG có /api/v1.
+const API_BASE = `${process.env.API_INTERNAL_URL ?? 'http://localhost:3001'}/api/v1`
 
 export async function apiFetch<T>(
   path: string,

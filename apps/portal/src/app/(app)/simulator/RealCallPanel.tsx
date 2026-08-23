@@ -28,6 +28,22 @@ function normalizePhone(input: string): string {
   return input.replace(/[^\d+]/g, '')
 }
 
+// voip24h chặn IP của cụm GCP nơi API/portal đang chạy — quay số chỉ hoạt động được từ softphone
+// chạy trên máy Mac (xem CLAUDE.md, mục "Đường deploy" và memory sip-softphone-own.md). Lỗi thật
+// từ backend trong trường hợp này là 500 kèm timeout khi lấy token voip24h, không phải bug portal
+// sửa được — nên thay vì hiện thẳng lỗi 500 trống trơn, giải thích rõ nguyên nhân cho người dùng.
+function explainDialError(rawMessage: string): string {
+  const lower = rawMessage.toLowerCase()
+  const looksLikeVoip24hBlock =
+    lower.includes('voip24h') || lower.includes('timeout') || lower.includes('token')
+  if (looksLikeVoip24hBlock) {
+    return 'Không quay số được: voip24h đang chặn IP của máy chủ GCP nên không lấy được token/thực ' +
+      'hiện cuộc gọi từ đây. Muốn gọi thật, hãy chạy softphone trên máy Mac (xem hướng dẫn trong ' +
+      'CLAUDE.md, mục Test thực tế 1 cuộc gọi — Bước 2) thay vì dùng nút này.'
+  }
+  return rawMessage
+}
+
 export function RealCallPanel() {
   const [phone, setPhone] = useState('')
   const [dialing, setDialing] = useState(false)
@@ -99,7 +115,7 @@ export function RealCallPanel() {
       })
       const data = await res.json() as { message?: string }
       if (!res.ok) {
-        setDialError(data.message ?? 'Gọi thất bại')
+        setDialError(explainDialError(data.message ?? 'Gọi thất bại'))
         return
       }
       setLines([{ id: uid(), role: 'system', text: `Đã gửi lệnh gọi tới ${normalized} — chờ bắt máy...` }])

@@ -27,6 +27,7 @@ export function CloudFoneSection() {
   const [errorMsg, setErrorMsg] = useState('')
   const [testStatus, setTestStatus] = useState<TestStatus>('idle')
   const [testMsg, setTestMsg] = useState('')
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
     void (async () => {
@@ -42,7 +43,13 @@ export function CloudFoneSection() {
             password: data.password,
           })
           setMeta({ updatedBy: data.updatedBy, updatedAt: data.updatedAt })
+        } else {
+          // Load thất bại: KHÔNG được để form giữ giá trị rỗng mặc định rồi
+          // cho phép bấm Lưu — sẽ ghi đè cấu hình thật bằng giá trị rỗng.
+          setLoadError(`Không thể tải cấu hình hiện tại (HTTP ${res.status}). Vui lòng tải lại trang trước khi lưu.`)
         }
+      } catch {
+        setLoadError('Không thể kết nối máy chủ để tải cấu hình. Vui lòng kiểm tra mạng và tải lại trang trước khi lưu.')
       } finally {
         setLoading(false)
       }
@@ -112,6 +119,7 @@ export function CloudFoneSection() {
       </div>
 
       <div className="px-6 py-6 space-y-5">
+        <LoadErrorBanner message={loadError} />
         <Field
           label="Socket"
           hint="Địa chỉ IP hoặc hostname của CloudFone server"
@@ -156,6 +164,7 @@ export function CloudFoneSection() {
         saveStatus={saveStatus} errorMsg={errorMsg}
         testStatus={testStatus} testMsg={testMsg}
         onTest={() => void handleTest()} onSave={() => void handleSave()}
+        saveDisabled={!!loadError}
       />
     </div>
   )
@@ -183,11 +192,14 @@ export function Meta({ updatedAt, updatedBy }: { updatedAt?: string | null; upda
 }
 
 export function SectionFooter({
-  saveStatus, errorMsg, testStatus, testMsg, onTest, onSave,
+  saveStatus, errorMsg, testStatus, testMsg, onTest, onSave, saveDisabled,
 }: {
   saveStatus: SaveStatus; errorMsg: string
   testStatus?: TestStatus; testMsg?: string
   onTest?: () => void; onSave: () => void
+  // Bắt buộc vô hiệu hoá nút Lưu khi load cấu hình ban đầu bị lỗi — nếu không,
+  // form đang giữ giá trị mặc định rỗng có thể bị lưu đè lên cấu hình thật.
+  saveDisabled?: boolean
 }) {
   return (
     <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--color-border)] bg-[var(--color-surface-overlay)]">
@@ -204,11 +216,29 @@ export function SectionFooter({
             Test kết nối
           </button>
         )}
-        <button type="button" onClick={onSave} disabled={saveStatus === 'saving'} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] disabled:opacity-50 transition-colors">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saveStatus === 'saving' || !!saveDisabled}
+          title={saveDisabled ? 'Không thể lưu vì chưa tải được cấu hình hiện tại' : undefined}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] disabled:opacity-50 transition-colors"
+        >
           {saveStatus === 'saving' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           Lưu cài đặt
         </button>
       </div>
+    </div>
+  )
+}
+
+// Banner hiển thị khi GET cấu hình ban đầu thất bại (lỗi mạng hoặc HTTP lỗi).
+// Không dùng component này để thay thế disable nút Lưu — luôn đi kèm cả hai.
+export function LoadErrorBanner({ message }: { message: string }) {
+  if (!message) return null
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/5 px-4 py-3 text-sm text-[var(--color-danger)]">
+      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+      <p>{message}</p>
     </div>
   )
 }

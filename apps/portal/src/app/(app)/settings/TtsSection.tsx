@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Volume2, Eye, EyeOff, RefreshCw } from 'lucide-react'
+import { Volume2, Eye, EyeOff, RefreshCw, AlertCircle } from 'lucide-react'
 import { Field, SelectField, NumberField, SliderField, ToggleField } from './Field'
-import { SectionFooter, SectionSkeleton, StatusDot, Meta } from './CloudFoneSection'
+import { SectionFooter, SectionSkeleton, StatusDot, Meta, LoadErrorBanner } from './CloudFoneSection'
 
 interface TtsSettings {
   engine: string
@@ -26,8 +26,12 @@ interface TtsSettings {
 }
 
 interface TtsHealth {
-  engines: Record<string, 'closed' | 'open' | 'half-open'>
-  quota: { used: number; cap: number; remaining: number; date: string }
+  engines?: Record<string, 'closed' | 'open' | 'half-open'>
+  quota?: { used: number; cap: number; remaining: number; date: string }
+  // Backend hiện có thể trả HTTP 200 kèm body { error: "..." } khi voice worker
+  // không kết nối được — phải coi trường hợp này là KHÔNG khoẻ, không render
+  // như đang lành mạnh.
+  error?: string
 }
 
 type SaveStatus = 'idle' | 'saving' | 'ok' | 'error'
@@ -106,6 +110,7 @@ export function TtsSection() {
   const [showKey, setShowKey] = useState(false)
   const [hasExistingKey, setHasExistingKey] = useState(false)
   const [health, setHealth] = useState<TtsHealth | null>(null)
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
     void (async () => {
@@ -116,7 +121,13 @@ export function TtsSection() {
           setHasExistingKey(data.elevenlabsApiKey === '***')
           setForm({ ...DEFAULT_FORM, ...data, elevenlabsApiKey: '' })
           setMeta({ updatedBy: data.updatedBy, updatedAt: data.updatedAt })
+        } else {
+          // Load thất bại: không cho phép bấm Lưu khi form đang là giá trị mặc định,
+          // tránh ghi đè cấu hình thật bằng dữ liệu rỗng/mặc định.
+          setLoadError(`Không thể tải cấu hình hiện tại (HTTP ${res.status}). Vui lòng tải lại trang trước khi lưu.`)
         }
+      } catch {
+        setLoadError('Không thể kết nối máy chủ để tải cấu hình. Vui lòng kiểm tra mạng và tải lại trang trước khi lưu.')
       } finally {
         setLoading(false)
       }
@@ -213,6 +224,7 @@ export function TtsSection() {
       </div>
 
       <div className="px-6 py-6 space-y-5">
+        <LoadErrorBanner message={loadError} />
         <SelectField
           label="Engine"
           hint="ElevenLabs cho chất lượng tiếng Việt tốt nhất"
@@ -402,40 +414,49 @@ export function TtsSection() {
                 <RefreshCw className="w-3.5 h-3.5" />
               </button>
             </div>
-            <div className="space-y-2">
-              {Object.entries(health.engines).map(([name, status]) => (
-                <div key={name} className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className={['w-2 h-2 rounded-full', CIRCUIT_DOT_COLOR[status] ?? 'bg-gray-400'].join(' ')} />
-                    <span className="font-medium text-[var(--color-text)]">{ENGINE_NAMES[name] ?? name}</span>
+            {health.error ? (
+              // Backend trả HTTP 200 kèm { error } khi voice worker không kết nối
+              // được — phải hiện rõ là lỗi, không được render như đang lành mạnh.
+              <div className="flex items-start gap-2 rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/5 px-3 py-2.5 text-xs text-[var(--color-danger)]">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <p>Không thể kiểm tra trạng thái engine: {health.error}</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {Object.entries(health.engines ?? {}).map(([name, status]) => (
+                  <div key={name} className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className={['w-2 h-2 rounded-full', CIRCUIT_DOT_COLOR[status] ?? 'bg-gray-400'].join(' ')} />
+                      <span className="font-medium text-[var(--color-text)]">{ENGINE_NAMES[name] ?? name}</span>
+                    </div>
+                    <span className="text-[var(--color-text-muted)] capitalize">{status}</span>
                   </div>
-                  <span className="text-[var(--color-text-muted)] capitalize">{status}</span>
-                </div>
-              ))}
-              {health.quota.cap > 0 && (
-                <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
-                  <div className="flex items-center justify-between text-xs mb-1.5">
-                    <span className="text-[var(--color-text-muted)]">ElevenLabs quota {health.quota.date}</span>
-                    <span className="font-mono text-[var(--color-text)]">
-                      {health.quota.used.toLocaleString()} / {health.quota.cap.toLocaleString()} chars
-                    </span>
+                ))}
+                {health.quota && health.quota.cap > 0 && (
+                  <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+                    <div className="flex items-center justify-between text-xs mb-1.5">
+                      <span className="text-[var(--color-text-muted)]">ElevenLabs quota {health.quota.date}</span>
+                      <span className="font-mono text-[var(--color-text)]">
+                        {health.quota.used.toLocaleString()} / {health.quota.cap.toLocaleString()} chars
+                      </span>
+                    </div>
+                    <div className="w-full bg-[var(--color-surface-overlay)] rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-[var(--color-accent)] transition-all"
+                        style={{ width: `${Math.min(100, (health.quota.used / health.quota.cap) * 100)}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full bg-[var(--color-surface-overlay)] rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-[var(--color-accent)] transition-all"
-                      style={{ width: `${Math.min(100, (health.quota.used / health.quota.cap) * 100)}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
         <Meta updatedAt={meta?.updatedAt} updatedBy={meta?.updatedBy} />
       </div>
 
-      <SectionFooter saveStatus={saveStatus} errorMsg={errorMsg} onSave={() => void handleSave()} />
+      <SectionFooter saveStatus={saveStatus} errorMsg={errorMsg} onSave={() => void handleSave()} saveDisabled={!!loadError} />
     </div>
   )
 }

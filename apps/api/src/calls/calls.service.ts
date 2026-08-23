@@ -4,7 +4,7 @@ import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialE
 import { Repository } from 'typeorm'
 import * as http from 'node:http'
 import * as https from 'node:https'
-import { CallSession } from './call-session.entity'
+import { CallSession, type CallStatus } from './call-session.entity'
 import { QaScore } from './qa-score.entity'
 import { CallTurn } from './call-turn.entity'
 import { CallRecording } from './call-recording.entity'
@@ -138,7 +138,7 @@ export class CallsService {
   }
 
   async listSessions(
-    opts: { page?: number; limit?: number; campaignId?: string } = {},
+    opts: { page?: number; limit?: number; campaignId?: string; status?: CallStatus } = {},
   ): Promise<{ data: CallSession[]; total: number }> {
     const page = opts.page ?? 1
     const limit = opts.limit ?? 20
@@ -149,6 +149,9 @@ export class CallsService {
       .take(limit)
 
     if (opts.campaignId) qb.andWhere('cs.campaignId = :cid', { cid: opts.campaignId })
+    // Lọc theo status khi được truyền vào — getManyAndCount() tính `total` dựa trên
+    // toàn bộ WHERE (bỏ qua skip/take), nên tổng số bản ghi cũng tự động đúng theo filter.
+    if (opts.status) qb.andWhere('cs.status = :status', { status: opts.status })
 
     const [data, total] = await qb.getManyAndCount()
     return { data, total }

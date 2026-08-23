@@ -3,8 +3,10 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ServiceUnavailableException,
 } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
+import { ConfigService } from '@nestjs/config'
 import { Repository, Not, IsNull } from 'typeorm'
 import { Campaign } from './campaign.entity'
 import { ScriptVersion } from './script-version.entity'
@@ -31,6 +33,7 @@ export class ScriptsService {
     @InjectRepository(NluDocument)
     private readonly nluRepo: Repository<NluDocument>,
     private readonly lintService: ScriptLintService,
+    private readonly config: ConfigService,
   ) {}
 
   validate(body: Record<string, unknown>) {
@@ -201,5 +204,66 @@ export class ScriptsService {
   async deactivateVoiceProfile(id: string): Promise<void> {
     await this.getVoiceProfile(id)
     await this.voiceProfileRepo.update(id, { isActive: false })
+  }
+
+  /**
+   * Tổng hợp thử một câu mẫu bằng cấu hình giọng của profile, gọi voice
+   * worker (VOICE_WORKER_URL, cùng pattern nlu.service.ts / knowledge.service.ts).
+   *
+   * Gọi POST /preview/voice — endpoint tổng hợp audio thật. Lưu ý phân biệt
+   * với POST /preview (không có hậu tố), vốn chỉ canh nhịp ngắt câu cho kịch
+   * bản và không hề chạm tới TTS engine nào.
+   *
+   * Voice worker trả WAV base64 (PCM 8kHz đã được bọc header RIFF) vì thẻ
+   * <audio> của trình duyệt không phát được PCM thô.
+   */
+  async previewVoiceProfile(id: string): Promise<{ audioBase64: string }> {
+    const profile = await this.getVoiceProfile(id)
+    const base = this.config.get<string>('VOICE_WORKER_URL', 'http://localhost:8000')
+    const text = `Xin chào, đây là giọng đọc thử của ${profile.displayName}.`
+
+    // elevenlabsVoiceId chỉ dùng cho engine elevenlabs; các engine khác đọc
+    // tên giọng từ ttsVoiceId. Voice worker tự route theo engine.
+    const voice =
+      profile.ttsEngine === 'elevenlabs'
+        ? (profile.elevenlabsVoiceId ?? profile.ttsVoiceId)
+        : profile.ttsVoiceId
+
+    let res: Response
+    try {
+      res = await fetch(`${base}/preview/voice`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          engine: profile.ttsEngine,
+          voice,
+          stability: profile.stabilityFactor,
+          similarity_boost: profile.similarityBoost,
+          style: profile.styleExaggeration,
+          use_speaker_boost: profile.useSpeakerBoost,
+        }),
+        // Tổng hợp cả câu (không streaming) nên chậm hơn TTFA một lượt thoại;
+        // 8s không đủ khi engine phải fallback sang engine thứ hai.
+        signal: AbortSignal.timeout(20000),
+      })
+    } catch {
+      throw new ServiceUnavailableException('Không kết nối được tới voice worker để tổng hợp giọng thử')
+    }
+
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      throw new ServiceUnavailableException(
+        `Voice worker trả lỗi khi tổng hợp giọng thử (HTTP ${res.status})${detail ? `: ${detail.slice(0, 300)}` : ''}`,
+      )
+    }
+
+    const body = (await res.json()) as { audioBase64?: string }
+    if (!body.audioBase64) {
+      throw new ServiceUnavailableException(
+        'Voice worker không trả về dữ liệu âm thanh cho giọng thử',
+      )
+    }
+    return { audioBase64: body.audioBase64 }
   }
 }

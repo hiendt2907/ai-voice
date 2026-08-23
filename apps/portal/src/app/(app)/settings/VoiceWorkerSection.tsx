@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Server } from 'lucide-react'
 import { Field, NumberField } from './Field'
-import { SectionFooter, SectionSkeleton, StatusDot, Meta } from './CloudFoneSection'
+import { SectionFooter, SectionSkeleton, StatusDot, Meta, LoadErrorBanner } from './CloudFoneSection'
 
 interface VoiceWorkerSettings {
   internalUrl: string
@@ -27,6 +27,7 @@ export function VoiceWorkerSection() {
   const [loading, setLoading] = useState(true)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
     void (async () => {
@@ -36,7 +37,13 @@ export function VoiceWorkerSection() {
           const data = (await res.json()) as VoiceWorkerSettings
           setForm(data)
           setMeta({ updatedBy: data.updatedBy, updatedAt: data.updatedAt })
+        } else {
+          // Load thất bại: không cho phép bấm Lưu khi form đang là giá trị mặc định,
+          // tránh ghi đè cấu hình thật bằng dữ liệu rỗng/mặc định.
+          setLoadError(`Không thể tải cấu hình hiện tại (HTTP ${res.status}). Vui lòng tải lại trang trước khi lưu.`)
         }
+      } catch {
+        setLoadError('Không thể kết nối máy chủ để tải cấu hình. Vui lòng kiểm tra mạng và tải lại trang trước khi lưu.')
       } finally {
         setLoading(false)
       }
@@ -93,6 +100,7 @@ export function VoiceWorkerSection() {
       </div>
 
       <div className="px-6 py-6 space-y-5">
+        <LoadErrorBanner message={loadError} />
         <Field label="Internal URL" hint="URL NestJS dùng để gọi voice worker" value={form.internalUrl} onChange={(v) => set('internalUrl', v)} placeholder="http://localhost:8000" />
         <div className="grid grid-cols-2 gap-4">
           <NumberField label="Max Concurrent Sessions" hint="Số cuộc gọi đồng thời tối đa" value={form.maxConcurrentSessions} onChange={(v) => set('maxConcurrentSessions', v)} min={1} max={100} />
@@ -101,7 +109,7 @@ export function VoiceWorkerSection() {
         <Meta updatedAt={meta?.updatedAt} updatedBy={meta?.updatedBy} />
       </div>
 
-      <SectionFooter saveStatus={saveStatus} errorMsg={errorMsg} onSave={() => void handleSave()} />
+      <SectionFooter saveStatus={saveStatus} errorMsg={errorMsg} onSave={() => void handleSave()} saveDisabled={!!loadError} />
     </div>
   )
 }

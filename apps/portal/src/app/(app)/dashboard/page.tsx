@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Phone, CheckCircle2, ArrowLeftRight, AlertCircle, Activity, Server, Database, Cpu, Radio, Plus, Star, Bot, Mic } from 'lucide-react'
+import { Phone, CheckCircle2, ArrowLeftRight, AlertCircle, Activity, Server, Database, Cpu, Radio, Plus, Star, Bot, AlertTriangle } from 'lucide-react'
 import { serverFetch } from '@/lib/api/server'
 import { LiveCallMonitor } from './LiveCallMonitor'
 
@@ -21,20 +21,18 @@ interface VoiceHealth {
   cloudfone?: { configured: boolean }
 }
 
-interface ElevenLabsMetrics {
-  total: number
-  ok: number
-  err: number
-  avgLatencyMs: number | null
-  lastSuccessTs: number | null
-  connected: boolean
-}
+// Kết quả gọi overview: phân biệt rõ "lấy thành công" (kể cả toàn số 0 khi thật sự chưa có dữ
+// liệu) với "gọi API thất bại" — không được lẫn hai trường hợp này thành cùng một giao diện.
+type OverviewResult =
+  | { ok: true; data: OverviewResponse }
+  | { ok: false }
 
-async function fetchOverview(): Promise<OverviewResponse> {
+async function fetchOverview(): Promise<OverviewResult> {
   try {
-    return await serverFetch<OverviewResponse>('/analytics/overview')
+    const data = await serverFetch<OverviewResponse>('/analytics/overview')
+    return { ok: true, data }
   } catch {
-    return { calls: { total: 0, completed: 0, handoff: 0, error: 0, active: 0 }, period: 'all', containmentRate: 0, avgQaScore: 0 }
+    return { ok: false }
   }
 }
 
@@ -57,33 +55,35 @@ async function fetchVoiceHealth(): Promise<VoiceHealth | null> {
   }
 }
 
-async function fetchQaPendingCount(): Promise<number> {
+// Cũng phân biệt "chờ chấm QA = 0" thật với "không lấy được danh sách QA queue".
+type QaPendingResult = { ok: true; count: number } | { ok: false }
+
+async function fetchQaPendingCount(): Promise<QaPendingResult> {
   try {
     const data = await serverFetch<unknown[]>('/calls/qa-queue')
-    return Array.isArray(data) ? data.length : 0
+    return { ok: true, count: Array.isArray(data) ? data.length : 0 }
   } catch {
-    return 0
-  }
-}
-
-async function fetchElevenLabsMetrics(): Promise<ElevenLabsMetrics> {
-  try {
-    const data = await serverFetch<ElevenLabsMetrics>('/analytics/elevenlabs')
-    return data
-  } catch {
-    return { total: 0, ok: 0, err: 0, avgLatencyMs: null, lastSuccessTs: null, connected: false }
+    return { ok: false }
   }
 }
 
 export default async function DashboardPage() {
-  const [overview, deps, voice, qaPending, elevenLabs] = await Promise.all([
+  const [overviewResult, deps, voice, qaPendingResult] = await Promise.all([
     fetchOverview(),
     fetchDepsHealth(),
     fetchVoiceHealth(),
     fetchQaPendingCount(),
-    fetchElevenLabsMetrics(),
   ])
-  const { calls } = overview
+
+  // deps là tín hiệu thật duy nhất cho biết API có phản hồi hay không — fetchDepsHealth() trả
+  // null khi request lỗi (network fail, non-2xx, JSON hỏng). Không được hardcode true nữa.
+  const apiOk = deps !== null
+  const overviewFailed = !overviewResult.ok
+  const calls = overviewResult.ok
+    ? overviewResult.data.calls
+    : { total: 0, completed: 0, handoff: 0, error: 0, active: 0 }
+  const containmentRate = overviewResult.ok ? overviewResult.data.containmentRate : 0
+  const avgQaScore = overviewResult.ok ? overviewResult.data.avgQaScore : 0
 
   const kpiCards = [
     { label: 'Tổng cuộc gọi', value: calls.total, icon: Phone, color: 'text-[var(--color-accent)]', bg: 'bg-[oklch(96%_0.03_250)]', href: '/calls' },
@@ -93,7 +93,6 @@ export default async function DashboardPage() {
     { label: 'Đang gọi', value: calls.active, icon: Activity, color: 'text-[var(--color-warning)]', bg: 'bg-[oklch(96%_0.08_85)]', href: '/calls?status=active' },
   ]
 
-  const apiOk = true // We got a response, so API is up
   const postgresOk = deps?.postgres === 'ok'
   const redisOk = deps?.redis === 'ok'
   const voiceOk = voice?.status === 'ok'
@@ -105,7 +104,9 @@ export default async function DashboardPage() {
     { label: 'Redis', ok: redisOk, icon: Cpu, detail: deps ? 'connected' : 'unreachable' },
   ]
 
-  const isFirstRun = calls.total === 0
+  // Banner "hệ thống sẵn sàng, chưa có cuộc gọi" chỉ hợp lệ khi ta THẬT SỰ biết total = 0.
+  // Khi gọi overview lỗi, calls.total cũng là 0 nhưng đó là dữ liệu giả — không được hiện banner này.
+  const isFirstRun = !overviewFailed && calls.total === 0
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
@@ -115,6 +116,24 @@ export default async function DashboardPage() {
           Tổng quan hệ thống AI Call — DoctorCheck
         </p>
       </div>
+
+      {/* Banner cảnh báo khi không lấy được dữ liệu overview — không được lẫn với "chưa có cuộc gọi" */}
+      {overviewFailed && (
+        <div className="mb-6 rounded-xl border border-[oklch(88%_0.08_27)] bg-[oklch(97%_0.04_27)] p-5">
+          <div className="flex items-start gap-4">
+            <div className="w-9 h-9 rounded-lg bg-[oklch(93%_0.08_27)] flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-5 h-5 text-[var(--color-danger)]" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-[var(--color-text)] mb-1">Không lấy được số liệu tổng quan</h3>
+              <p className="text-xs text-[var(--color-text-muted)]">
+                API không phản hồi truy vấn <code>/analytics/overview</code>. Các số liệu bên dưới đang hiển thị 0 vì
+                lỗi kết nối, không phải vì hệ thống chưa có cuộc gọi nào. Kiểm tra API Server ở mục System Health bên dưới.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* First-run banner */}
       {isFirstRun && (
@@ -170,12 +189,12 @@ export default async function DashboardPage() {
       </div>
 
       {/* Secondary row: KPIs + System health */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         {/* Containment */}
         <div className="rounded-xl border border-[var(--color-border)] bg-white p-4">
           <p className="text-xs text-[var(--color-text-muted)] font-medium uppercase tracking-wide mb-1">Containment Rate</p>
           <p className="text-2xl font-bold text-[var(--color-text)]">
-            {(overview.containmentRate * 100).toFixed(1)}%
+            {(containmentRate * 100).toFixed(1)}%
           </p>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">Cuộc gọi AI xử lý hoàn toàn</p>
         </div>
@@ -184,57 +203,16 @@ export default async function DashboardPage() {
         <div className="rounded-xl border border-[var(--color-border)] bg-white p-4">
           <p className="text-xs text-[var(--color-text-muted)] font-medium uppercase tracking-wide mb-1">Avg QA Score</p>
           <p className="text-2xl font-bold text-[var(--color-text)]">
-            {overview.avgQaScore.toFixed(1)}{' '}
+            {avgQaScore.toFixed(1)}{' '}
             <span className="text-sm font-normal text-[var(--color-text-muted)]">/ 5</span>
           </p>
-          {qaPending > 0 && (
+          {qaPendingResult.ok && qaPendingResult.count > 0 && (
             <Link href="/qa" className="text-xs text-[var(--color-warning)] hover:underline mt-1 block">
-              {qaPending} cuộc gọi chờ chấm →
+              {qaPendingResult.count} cuộc gọi chờ chấm →
             </Link>
           )}
-        </div>
-
-        {/* ElevenLabs metrics */}
-        <div className={`rounded-xl border bg-white p-4 ${elevenLabs.connected ? 'border-[var(--color-border)]' : 'border-[oklch(88%_0.06_27)]'}`}>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs text-[var(--color-text-muted)] font-medium uppercase tracking-wide">ElevenLabs</p>
-            <div className="flex items-center gap-1.5">
-              <span className={`w-1.5 h-1.5 rounded-full ${elevenLabs.connected ? 'bg-[var(--color-success)]' : 'bg-[oklch(60%_0.15_27)]'}`} />
-              <span className={`text-[10px] font-medium ${elevenLabs.connected ? 'text-[var(--color-success)]' : 'text-[oklch(50%_0.15_27)]'}`}>
-                {elevenLabs.connected ? 'active' : 'idle'}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-end gap-2 mb-1">
-            <div className="w-6 h-6 rounded-md bg-[oklch(95%_0.03_250)] flex items-center justify-center shrink-0">
-              <Mic className="w-3.5 h-3.5 text-[var(--color-accent)]" />
-            </div>
-            <p className="text-2xl font-bold text-[var(--color-text)] leading-none">
-              {elevenLabs.total === 0 ? '0' : elevenLabs.total.toLocaleString()}
-            </p>
-          </div>
-          {elevenLabs.total === 0 ? (
-            <p className="text-[10px] text-[var(--color-text-muted)]">Chưa có request nào</p>
-          ) : (
-            <div className="space-y-0.5 mt-1">
-              <div className="flex items-center gap-2 text-[10px]">
-                <span className="w-1 h-1 rounded-full bg-[var(--color-success)] shrink-0" />
-                <span className="text-[var(--color-text-muted)]">OK</span>
-                <span className="font-semibold text-[var(--color-text)] ml-auto">{elevenLabs.ok}</span>
-              </div>
-              <div className="flex items-center gap-2 text-[10px]">
-                <span className="w-1 h-1 rounded-full bg-[var(--color-danger)] shrink-0" />
-                <span className="text-[var(--color-text-muted)]">Err</span>
-                <span className="font-semibold text-[var(--color-text)] ml-auto">{elevenLabs.err}</span>
-              </div>
-              {elevenLabs.avgLatencyMs !== null && (
-                <div className="flex items-center gap-2 text-[10px]">
-                  <span className="w-1 h-1 rounded-full bg-[var(--color-accent)] shrink-0" />
-                  <span className="text-[var(--color-text-muted)]">Avg</span>
-                  <span className="font-semibold text-[var(--color-text)] ml-auto">{elevenLabs.avgLatencyMs}ms</span>
-                </div>
-              )}
-            </div>
+          {!qaPendingResult.ok && (
+            <p className="text-xs text-[var(--color-danger)] mt-1">Không lấy được QA queue</p>
           )}
         </div>
 

@@ -25,14 +25,25 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   // Trigger re-embed via voice worker
   const voiceUrl = process.env.VOICE_WORKER_URL ?? 'http://localhost:8001'
+  let embedRes: Response
   try {
-    await fetch(`${voiceUrl}/rag/embed`, {
+    embedRes = await fetch(`${voiceUrl}/rag/embed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ article_id: id, texts }),
     })
   } catch {
     return NextResponse.json({ message: 'Voice worker không phản hồi' }, { status: 502 })
+  }
+
+  // BẮT BUỘC kiểm tra res.ok — fetch chỉ throw khi lỗi mạng, không throw khi voice worker
+  // trả về 4xx/5xx. Trước đây thiếu kiểm tra này nên embed thất bại vẫn báo {ok:true}.
+  if (!embedRes.ok) {
+    const body = await embedRes.text()
+    return NextResponse.json(
+      { message: `Voice worker embed thất bại (${embedRes.status}): ${body}` },
+      { status: 502 },
+    )
   }
 
   return NextResponse.json({ ok: true })

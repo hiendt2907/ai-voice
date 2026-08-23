@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect, useId, useState } from 'react'
+
 export function Field({
   label,
   hint,
@@ -17,14 +19,16 @@ export function Field({
   type?: string
   icon?: React.ReactNode
 }) {
+  const inputId = useId()
   return (
     <div>
-      <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">{label}</label>
+      <label htmlFor={inputId} className="block text-sm font-medium text-[var(--color-text)] mb-1.5">{label}</label>
       <div className="relative">
         {icon && (
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]">{icon}</span>
         )}
         <input
+          id={inputId}
           type={type}
           value={value ?? ''}
           onChange={(e) => onChange(e.target.value)}
@@ -50,14 +54,25 @@ export function SelectField({
   onChange: (v: string) => void
   options: { value: string; label: string }[]
 }) {
+  const inputId = useId()
+  const current = value ?? ''
+  // Nếu giá trị hiện tại không nằm trong danh sách option, trình duyệt sẽ tự
+  // chọn option đầu tiên trong khi state vẫn giữ giá trị khác — người dùng
+  // thấy sai và có thể lưu nhầm. Chèn thêm một option tạm đánh dấu rõ giá trị
+  // thật đang được lưu, để <select> luôn hiển thị đúng giá trị của state.
+  const hasMatch = current === '' || options.some((o) => o.value === current)
   return (
     <div>
-      <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">{label}</label>
+      <label htmlFor={inputId} className="block text-sm font-medium text-[var(--color-text)] mb-1.5">{label}</label>
       <select
-        value={value ?? ''}
+        id={inputId}
+        value={current}
         onChange={(e) => onChange(e.target.value)}
         className="input w-full"
       >
+        {!hasMatch && (
+          <option value={current}>{`⚠️ Giá trị không xác định: ${current}`}</option>
+        )}
         {options.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
@@ -160,16 +175,40 @@ export function NumberField({
   max?: number
   step?: number
 }) {
+  const inputId = useId()
+  // Giữ chuỗi hiển thị riêng với giá trị số đã commit ra ngoài: xoá trống ô
+  // input không được tự ép về 0 (Number('') === 0) — chỉ khi người dùng gõ
+  // một số hợp lệ mới gọi onChange. Đồng bộ lại khi prop value đổi từ bên ngoài.
+  const [text, setText] = useState<string>(value == null ? '' : String(value))
+
+  useEffect(() => {
+    setText(value == null ? '' : String(value))
+  }, [value])
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value
+    setText(raw)
+    if (raw.trim() === '') {
+      // Ô trống: chỉ cập nhật hiển thị, không âm thầm ghi giá trị 0 ra ngoài
+      return
+    }
+    const parsed = Number(raw)
+    if (!Number.isNaN(parsed)) {
+      onChange(parsed)
+    }
+  }
+
   return (
     <div>
-      <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">{label}</label>
+      <label htmlFor={inputId} className="block text-sm font-medium text-[var(--color-text)] mb-1.5">{label}</label>
       <input
+        id={inputId}
         type="number"
-        value={value ?? 0}
+        value={text}
         min={min}
         max={max}
         step={step}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={handleChange}
         className="input"
       />
       {hint && <p className="text-xs text-[var(--color-text-muted)] mt-1">{hint}</p>}

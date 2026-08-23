@@ -6,7 +6,7 @@
   "voice_profile": "linh_clone_v1",
   "entry_step": "greeting",
   "disable_fillers": true,
-  "linkedKbTags": [],
+  "linkedKbTags": ["booking", "dat_lich", "lich_kham", "hours", "pricing", "insurance", "services", "doctors", "general", "faq"],
   "steps": [
     {
       "id": "greeting",

@@ -14,7 +14,8 @@ import pytest
 from call.egress import EgressSender
 from call.events import CallContext
 from call.media import MediaRouter
-from call.turn import TurnOrchestrator
+from call.turn import TurnOrchestrator, _resolves_to_graceful_close
+from runtime.executor import TurnResult
 from runtime.session import SessionState
 
 
@@ -198,3 +199,152 @@ async def test_on_transcript_and_on_answer_enqueue():
 
     assert orch.transcript_queue.qsize() == 1
     assert orch.answer_queue.qsize() == 1
+
+
+# ── status classification (booking_success mislabelled "error" bug) ────────
+#
+# 267 cuộc gọi đặt lịch thành công từng bị ghi status="error" vì step
+# booking_success có type "speak_listen" (vẫn lắng nghe xem khách còn cần gì
+# thêm không), nên khi khách cúp máy ở đó, state.status không bao giờ được
+# set thành "completed" — _post_call_events (ws.py) map mọi status khác
+# "completed"/"handoff" thành "error". Các test dưới đây chứng minh
+# call.turn._resolves_to_graceful_close() phân biệt đúng ba trường hợp mà
+# KHÔNG hardcode step id "booking_success" — chỉ dựa vào fallback_goto của
+# chính step đó trỏ tới step "speak"/"hangup" (kết thúc êm) hay "handoff"
+# (còn dở dang, cần người thật).
+
+_GRACEFUL_CLOSE_STEPS: dict[str, dict] = {
+    "booking_success": {
+        "id": "booking_success",
+        "type": "speak_listen",
+        "fallback_goto": "farewell",
+        "variants": [{"beats": [{"text": "Dạ, em đặt lịch xong rồi ạ.", "pause_after": "turn"}]}],
+    },
+    "farewell": {
+        "id": "farewell",
+        "type": "speak",
+        "variants": [{"beats": [{"text": "Chúc anh chị sức khỏe ạ.", "pause_after": "long"}]}],
+    },
+    "collect_patient_info": {
+        "id": "collect_patient_info",
+        "type": "speak_listen",
+        "fallback_goto": "handoff_to_staff",
+        "variants": [{"beats": [{"text": "Cho em xin tên anh chị ạ.", "pause_after": "turn"}]}],
+    },
+    "handoff_to_staff": {
+        "id": "handoff_to_staff",
+        "type": "handoff",
+        "variants": [{"beats": [{"text": "Em xin phép chuyển máy ạ.", "pause_after": "turn"}]}],
+    },
+}
+
+
+def _fake_async_process_turn(next_step_id: str):
+    """Stand-in for runtime.executor.async_process_turn: skips real NLU/vector
+    matching entirely and just transitions state.current_step_id straight to
+    `next_step_id`, the way a genuine FSM transition would after matching an
+    intent. What's under test is call.turn's post-transition status logic,
+    not the NLU layer."""
+
+    async def _fake(state, script_body, utterance, nlu):  # noqa: ANN001
+        new_state = state.with_step(next_step_id)
+        return TurnResult(
+            agent_text="", intent="some_intent", slots={}, next_step_id=next_step_id,
+            is_handoff=False, is_completed=False, state=new_state,
+        )
+
+    return _fake
+
+
+@pytest.mark.asyncio
+async def test_speak_listen_step_resolving_to_graceful_close_marks_completed(monkeypatch):
+    """(a) booking_success-like step (speak_listen, fallback_goto -> farewell
+    whose type is "speak") reached, khách rồi cúp máy -> status phải là
+    "completed", không phải "active" (mà ws.py sẽ map thành "error")."""
+    orch, _, _, _ = _make_orchestrator()
+    orch.ctx.steps = _GRACEFUL_CLOSE_STEPS
+    orch.state = SessionState(session_id="s1", script_id="scr", current_step_id="confirm_booking")
+    monkeypatch.setattr("call.turn.async_process_turn", _fake_async_process_turn("booking_success"))
+
+    await orch.process_utterance("vâng đúng rồi ạ", 0.0)
+
+    assert orch.state is not None
+    assert orch.state.current_step_id == "booking_success"
+    assert orch.state.status == "completed"
+    # speak_listen vẫn đang lắng nghe — cuộc gọi KHÔNG kết thúc ngay lượt này.
+    assert not orch.call_ended.is_set()
+
+
+@pytest.mark.asyncio
+async def test_speak_listen_step_falling_back_to_handoff_stays_active(monkeypatch):
+    """(b) đứt giữa chừng ở bước thu thập thông tin (fallback_goto trỏ tới
+    step "handoff", không phải "speak"/"hangup") -> status phải KHÔNG được
+    đổi thành "completed" — vẫn "active" nên _post_call_events tiếp tục ghi
+    nhận đúng là "error" (dở dang thật sự, không phải lỗi giả)."""
+    orch, _, _, _ = _make_orchestrator()
+    orch.ctx.steps = _GRACEFUL_CLOSE_STEPS
+    orch.state = SessionState(session_id="s1", script_id="scr", current_step_id="confirm_time_available")
+    monkeypatch.setattr("call.turn.async_process_turn", _fake_async_process_turn("collect_patient_info"))
+
+    await orch.process_utterance("tôi tên là Hiền", 0.0)
+
+    assert orch.state is not None
+    assert orch.state.current_step_id == "collect_patient_info"
+    assert orch.state.status == "active"
+    assert not orch.call_ended.is_set()
+
+
+@pytest.mark.asyncio
+async def test_landing_on_handoff_step_marks_handoff_status(monkeypatch):
+    """(c) Chuyển thẳng tới step type "handoff" -> status phải là "handoff",
+    và cuộc gọi kết thúc bằng end_call("handoff", ...) ngay lượt đó."""
+    orch, ws, adapter, _ = _make_orchestrator()
+    orch.ctx.steps = _GRACEFUL_CLOSE_STEPS
+    orch.state = SessionState(session_id="s1", script_id="scr", current_step_id="collect_patient_info")
+    monkeypatch.setattr("call.turn.async_process_turn", _fake_async_process_turn("handoff_to_staff"))
+
+    await orch.process_utterance("cho tôi gặp nhân viên", 0.0)
+
+    assert orch.state is not None
+    assert orch.state.current_step_id == "handoff_to_staff"
+    assert orch.state.status == "handoff"
+    assert orch.call_ended.is_set()
+    assert adapter.last_end == ("handoff", "s1")
+
+
+# ── _resolves_to_graceful_close: pure structural criterion ─────────────────
+
+
+def test_resolves_to_graceful_close_true_when_fallback_is_speak():
+    steps = _GRACEFUL_CLOSE_STEPS
+    assert _resolves_to_graceful_close(steps["booking_success"], steps) is True
+
+
+def test_resolves_to_graceful_close_false_when_fallback_is_handoff():
+    steps = _GRACEFUL_CLOSE_STEPS
+    assert _resolves_to_graceful_close(steps["collect_patient_info"], steps) is False
+
+
+def test_resolves_to_graceful_close_false_when_no_fallback_goto():
+    step = {"id": "no_fallback", "type": "speak_listen"}
+    assert _resolves_to_graceful_close(step, _GRACEFUL_CLOSE_STEPS) is False
+
+
+def test_resolves_to_graceful_close_follows_transitive_speak_listen_chain():
+    """fallback_goto có thể trỏ tới một speak_listen KHÁC trước khi tới
+    step "speak" cuối cùng — vẫn phải resolve True (đi qua chuỗi, không chỉ
+    nhìn một bước)."""
+    steps = {
+        "mid": {"id": "mid", "type": "speak_listen", "fallback_goto": "farewell"},
+        "farewell": {"id": "farewell", "type": "speak"},
+    }
+    step = {"id": "start", "type": "speak_listen", "fallback_goto": "mid"}
+    assert _resolves_to_graceful_close(step, steps) is True
+
+
+def test_resolves_to_graceful_close_handles_cycle_without_infinite_recursion():
+    """fallback_goto trỏ vòng lại chính nó (kịch bản lỗi cấu hình) không được
+    làm treo recursion — phải trả về False."""
+    steps = {"loop": {"id": "loop", "type": "speak_listen", "fallback_goto": "loop"}}
+    step = steps["loop"]
+    assert _resolves_to_graceful_close(step, steps) is False

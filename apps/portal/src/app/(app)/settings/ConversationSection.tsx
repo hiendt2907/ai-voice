@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { MessageSquare } from 'lucide-react'
 import { Field, SelectField, NumberField, SliderField, ToggleField } from './Field'
-import { SectionFooter, SectionSkeleton, StatusDot, Meta } from './CloudFoneSection'
+import { SectionFooter, SectionSkeleton, StatusDot, Meta, LoadErrorBanner } from './CloudFoneSection'
 
 interface ConversationSettings {
   enabled: boolean
@@ -46,6 +46,7 @@ export function ConversationSection() {
   const [loading, setLoading] = useState(true)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
     void (async () => {
@@ -55,7 +56,13 @@ export function ConversationSection() {
           const data = (await res.json()) as ConversationSettings
           setForm({ ...DEFAULTS, ...data })
           setMeta({ updatedBy: data.updatedBy, updatedAt: data.updatedAt })
+        } else {
+          // Load thất bại: không cho phép bấm Lưu khi form đang là giá trị mặc định,
+          // tránh ghi đè cấu hình thật bằng dữ liệu rỗng/mặc định.
+          setLoadError(`Không thể tải cấu hình hiện tại (HTTP ${res.status}). Vui lòng tải lại trang trước khi lưu.`)
         }
+      } catch {
+        setLoadError('Không thể kết nối máy chủ để tải cấu hình. Vui lòng kiểm tra mạng và tải lại trang trước khi lưu.')
       } finally {
         setLoading(false)
       }
@@ -119,6 +126,7 @@ export function ConversationSection() {
       </div>
 
       <div className="px-6 py-6 space-y-5">
+        <LoadErrorBanner message={loadError} />
         <ToggleField
           label="Bật LLM Conversation"
           hint="AI sinh câu trả lời tự nhiên dựa trên KB context. Khi tắt: dùng template trực tiếp từ KB."
@@ -205,7 +213,7 @@ export function ConversationSection() {
         <Meta updatedAt={meta?.updatedAt} updatedBy={meta?.updatedBy} />
       </div>
 
-      <SectionFooter saveStatus={saveStatus} errorMsg={errorMsg} onSave={() => void handleSave()} />
+      <SectionFooter saveStatus={saveStatus} errorMsg={errorMsg} onSave={() => void handleSave()} saveDisabled={!!loadError} />
     </div>
   )
 }
