@@ -17,6 +17,7 @@ import { CallbacksModule } from './callbacks/callbacks.module'
 import { KnowledgeModule } from './knowledge/knowledge.module'
 import { NluModule } from './nlu/nlu.module'
 import { Voip24hModule } from './voip24h/voip24h.module'
+import { ServiceApiKeysModule } from './service-api-keys/service-api-keys.module'
 
 const isDev = process.env.NODE_ENV !== 'production'
 
@@ -55,6 +56,7 @@ const isDev = process.env.NODE_ENV !== 'production'
     KnowledgeModule,
     NluModule,
     Voip24hModule,
+    ServiceApiKeysModule,
     ...(isDev ? [DevModule] : []),
   ],
 })

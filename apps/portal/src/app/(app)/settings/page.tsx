@@ -10,8 +10,9 @@ import { VoiceWorkerSection } from './VoiceWorkerSection'
 import { DoctorCheckSection } from './DoctorCheckSection'
 import { VoiceProfilesSection } from './VoiceProfilesSection'
 import { ConversationSection } from './ConversationSection'
+import { ServiceApiKeysSection } from './ServiceApiKeysSection'
 
-type Tab = 'cloudfone' | 'doctorcheck' | 'ai' | 'conversation' | 'stt' | 'tts' | 'voices' | 'notify' | 'voice-worker'
+type Tab = 'cloudfone' | 'doctorcheck' | 'ai' | 'conversation' | 'stt' | 'tts' | 'voices' | 'notify' | 'voice-worker' | 'api-keys'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'cloudfone', label: 'CloudFone' },
@@ -23,6 +24,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'voices', label: 'Voice Profiles' },
   { id: 'notify', label: 'Thông báo' },
   { id: 'voice-worker', label: 'Voice Worker' },
+  { id: 'api-keys', label: 'API Keys' },
 ]
 
 export default function SettingsPage() {
@@ -66,6 +68,7 @@ export default function SettingsPage() {
       {activeTab === 'voices' && <VoiceProfilesSection />}
       {activeTab === 'notify' && <NotifySection />}
       {activeTab === 'voice-worker' && <VoiceWorkerSection />}
+      {activeTab === 'api-keys' && <ServiceApiKeysSection />}
     </div>
   )
 }
