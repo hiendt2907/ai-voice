@@ -19,6 +19,8 @@ from typing import Literal
 
 import httpx
 
+from api.internal_auth import internal_headers
+
 from rag.embedder import cosine_similarity
 
 logger = logging.getLogger(__name__)
@@ -61,7 +63,7 @@ async def reload_from_api(api_url: str, campaign_id: str | None = None) -> int:
         params["campaignId"] = campaign_id
 
     async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.get(url, params=params)
+        resp = await client.get(url, params=params, headers=internal_headers())
         resp.raise_for_status()
         raw: list[dict] = resp.json()
 
@@ -114,6 +116,7 @@ async def reload_from_api(api_url: str, campaign_id: str | None = None) -> int:
                         await patch_client.patch(
                             f"{api_url}/internal/nlu/{doc.id}/embedding",
                             json={"embeddingJson": json.dumps(vec)},
+                            headers=internal_headers(),
                             timeout=5,
                         )
                     except Exception as patch_exc:

@@ -1,7 +1,7 @@
 """Tests for Sprint 4: protocol types, async executor, streamer."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -173,46 +173,17 @@ def test_process_with_match_terminal_step():
 # ---------------------------------------------------------------------------
 
 
-async def test_async_process_turn_no_nlu():
-    """With nlu=None, falls back to sync process_turn."""
+async def test_async_process_turn_falls_back_to_substring_matcher():
+    """Without any confident NLU tier available, falls back to the sync
+    substring matcher (`process_turn`). Ghi chú: `async_process_turn` không
+    còn nhận tham số `nlu` — bản `LLMNLUClassifier` (llm/nlu.py) từng được
+    truyền qua tham số đó đã bị xoá vì là code chết: đường NLU thật đi qua
+    `nlu.intent_resolver` / `nlu.llm_resolver`, import trực tiếp bên trong
+    hàm này, không qua tham số nào cả."""
     state = create_session(MINIMAL_SCRIPT)
-    result = await async_process_turn(state, MINIMAL_SCRIPT, "đặt lịch", nlu=None)
+    result = await async_process_turn(state, MINIMAL_SCRIPT, "đặt lịch")
     assert result.intent == "book_appointment"
     assert result.next_step_id == "farewell"
-
-
-async def test_async_process_turn_with_nlu_success():
-    """With working NLU, uses LLM result."""
-    import json  # noqa: PLC0415
-    from llm.nlu import LLMNLUClassifier  # noqa: PLC0415
-
-    mock_client = MagicMock()
-    mock_client.chat = AsyncMock(return_value=json.dumps({
-        "intent": "book_appointment",
-        "slots": {},
-        "confidence": 0.95,
-        "is_out_of_scope": False,
-    }))
-    nlu = LLMNLUClassifier(mock_client)
-
-    state = create_session(MINIMAL_SCRIPT)
-    result = await async_process_turn(state, MINIMAL_SCRIPT, "tôi muốn đặt lịch", nlu=nlu)
-    assert result.intent == "book_appointment"
-    assert result.next_step_id == "farewell"
-
-
-async def test_async_process_turn_nlu_timeout_falls_back():
-    """On NLU timeout, falls back to substring matcher."""
-    from llm.nlu import LLMNLUClassifier  # noqa: PLC0415
-
-    mock_client = MagicMock()
-    mock_client.chat = AsyncMock(side_effect=asyncio.TimeoutError())
-    nlu = LLMNLUClassifier(mock_client)
-
-    state = create_session(MINIMAL_SCRIPT)
-    # "đặt lịch" triggers book_appointment via domain-specific intent inference
-    result = await async_process_turn(state, MINIMAL_SCRIPT, "đặt lịch", nlu=nlu)
-    assert result.next_step_id == "farewell"  # fallback matched
 
 
 async def test_async_process_turn_no_utterance():

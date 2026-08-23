@@ -12,12 +12,26 @@ export default function EditArticlePage() {
   const router = useRouter()
   const [article, setArticle] = useState<KnowledgeArticle | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [reembedding, setReembedding] = useState(false)
 
   useEffect(() => {
+    setLoadError(null)
     fetch(`/api/knowledge/${id}`)
-      .then((r) => r.json())
-      .then((data: KnowledgeArticle) => setArticle(data))
+      .then(async (r) => {
+        if (!r.ok) {
+          const body = (await r.json().catch(() => ({}))) as { message?: string }
+          throw new Error(body.message ?? `Không thể tải bài viết (HTTP ${r.status})`)
+        }
+        return (await r.json()) as KnowledgeArticle
+      })
+      .then((data) => setArticle(data))
+      .catch((err: unknown) => {
+        // Load thất bại: KHÔNG được đẩy object lỗi vào form — tránh người dùng
+        // vô tình bấm Lưu và ghi đè bài viết thật bằng dữ liệu rác.
+        setLoadError(err instanceof Error ? err.message : 'Lỗi không xác định khi tải bài viết')
+      })
       .finally(() => setLoading(false))
   }, [id])
 
@@ -36,8 +50,17 @@ export default function EditArticlePage() {
 
   async function handleDelete() {
     if (!confirm('Xoá bài viết này?')) return
-    await fetch(`/api/knowledge/${id}`, { method: 'DELETE' })
-    router.push('/knowledge')
+    setDeleteError(null)
+    try {
+      const res = await fetch(`/api/knowledge/${id}`, { method: 'DELETE' })
+      if (!res.ok && res.status !== 204) {
+        const body = (await res.json().catch(() => ({}))) as { message?: string }
+        throw new Error(body.message ?? `Không thể xoá bài viết (HTTP ${res.status})`)
+      }
+      router.push('/knowledge')
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Lỗi không xác định khi xoá bài viết')
+    }
   }
 
   async function handleReembed() {
@@ -54,6 +77,16 @@ export default function EditArticlePage() {
     return (
       <div className="p-8 max-w-3xl mx-auto">
         <div className="h-8 w-48 rounded bg-[var(--color-border)] animate-pulse" />
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="p-8 max-w-3xl mx-auto">
+        <p className="text-sm text-red-500 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+          {loadError}
+        </p>
       </div>
     )
   }
@@ -112,6 +145,11 @@ export default function EditArticlePage() {
             </button>
           </div>
         </div>
+        {deleteError && (
+          <p className="mt-3 text-sm text-red-500 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+            {deleteError}
+          </p>
+        )}
       </div>
 
       <ArticleForm

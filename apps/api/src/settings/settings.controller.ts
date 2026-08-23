@@ -31,6 +31,7 @@ export class SettingsController {
   // ── CloudFone ─────────────────────────────────────────────────────────────
 
   @Get('cloudfone')
+  @Roles('admin')
   @ApiOperation({ summary: 'Get CloudFone connection settings' })
   getCloudFone() {
     return this.svc.getCloudFone()
@@ -60,6 +61,7 @@ export class SettingsController {
   // ── AI / LLM ──────────────────────────────────────────────────────────────
 
   @Get('ai')
+  @Roles('admin')
   @ApiOperation({ summary: 'Get AI / LLM settings' })
   getAi() {
     return this.svc.getAi()
@@ -83,6 +85,7 @@ export class SettingsController {
   // ── STT ───────────────────────────────────────────────────────────────────
 
   @Get('stt')
+  @Roles('admin')
   @ApiOperation({ summary: 'Get STT settings' })
   getStt() {
     return this.svc.getStt()
@@ -105,12 +108,14 @@ export class SettingsController {
   // ── TTS ───────────────────────────────────────────────────────────────────
 
   @Get('tts')
+  @Roles('admin')
   @ApiOperation({ summary: 'Get TTS settings' })
   getTts() {
     return this.svc.getTts()
   }
 
   @Get('tts/health')
+  @Roles('admin')
   @ApiOperation({ summary: 'TTS engine health — circuit breaker + quota status' })
   async getTtsHealth() {
     return this.svc.getTtsHealth()
@@ -137,6 +142,7 @@ export class SettingsController {
   // ── Notify ────────────────────────────────────────────────────────────────
 
   @Get('notify')
+  @Roles('admin')
   @ApiOperation({ summary: 'Get notification settings (token masked)' })
   getNotify() {
     return this.svc.getNotify()
@@ -159,6 +165,7 @@ export class SettingsController {
   // ── Voice Worker ──────────────────────────────────────────────────────────
 
   @Get('voice-worker')
+  @Roles('admin')
   @ApiOperation({ summary: 'Get voice worker settings' })
   getVoiceWorker() {
     return this.svc.getVoiceWorker()
@@ -184,6 +191,7 @@ export class SettingsController {
   // ── DoctorCheck ───────────────────────────────────────────────────────────
 
   @Get('doctorcheck')
+  @Roles('admin')
   @ApiOperation({ summary: 'Get DoctorCheck API settings' })
   getDoctorCheck() {
     return this.svc.getDoctorCheck()
@@ -213,6 +221,7 @@ export class SettingsController {
   // ── Conversation ──────────────────────────────────────────────────────────
 
   @Get('conversation')
+  @Roles('admin')
   @ApiOperation({ summary: 'Get LLM Conversation settings' })
   getConversation() {
     return this.svc.getConversation()

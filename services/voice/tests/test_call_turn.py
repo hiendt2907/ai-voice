@@ -71,7 +71,7 @@ def _make_orchestrator(exec_mode: str = "fsm") -> tuple[TurnOrchestrator, _FakeW
     )
     orch = TurnOrchestrator(
         egress, media, dialogue, ctx, None,  # type: ignore[arg-type]
-        nlu=None, tts_chain=None, tts=None, settings=settings,
+        tts_chain=None, tts=None, settings=settings,
     )
     return orch, ws, adapter, dialogue
 
@@ -246,7 +246,7 @@ def _fake_async_process_turn(next_step_id: str):
     intent. What's under test is call.turn's post-transition status logic,
     not the NLU layer."""
 
-    async def _fake(state, script_body, utterance, nlu):  # noqa: ANN001
+    async def _fake(state, script_body, utterance):  # noqa: ANN001
         new_state = state.with_step(next_step_id)
         return TurnResult(
             agent_text="", intent="some_intent", slots={}, next_step_id=next_step_id,

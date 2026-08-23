@@ -86,7 +86,6 @@ def _normalize_date(m: re.Match) -> str:  # type: ignore[type-arg]
     Skips 'ngày' prefix if already present in the surrounding text.
     """
     day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
-    prefix = "" if m.group(0) != m.string[m.start():m.end()] else ""
     # Check if 'ngày ' immediately precedes this match
     pre = m.string[max(0, m.start() - 5):m.start()]
     if "ngày" in pre or "Ngày" in pre:

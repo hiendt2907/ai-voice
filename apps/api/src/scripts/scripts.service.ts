@@ -6,7 +6,6 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
-import { ConfigService } from '@nestjs/config'
 import { Repository, Not, IsNull } from 'typeorm'
 import { Campaign } from './campaign.entity'
 import { ScriptVersion } from './script-version.entity'
@@ -18,6 +17,7 @@ import { CreateCampaignDto } from './dto/create-campaign.dto'
 import { CreateVersionDto } from './dto/create-version.dto'
 import { PatchCampaignDto } from './dto/patch-campaign.dto'
 import { UpsertVoiceProfileDto } from './dto/upsert-voice-profile.dto'
+import { VoiceWorkerUrlResolver } from '../common/voice-worker-url.resolver'
 
 @Injectable()
 export class ScriptsService {
@@ -33,7 +33,7 @@ export class ScriptsService {
     @InjectRepository(NluDocument)
     private readonly nluRepo: Repository<NluDocument>,
     private readonly lintService: ScriptLintService,
-    private readonly config: ConfigService,
+    private readonly voiceWorkerUrlResolver: VoiceWorkerUrlResolver,
   ) {}
 
   validate(body: Record<string, unknown>) {
@@ -208,7 +208,9 @@ export class ScriptsService {
 
   /**
    * Tổng hợp thử một câu mẫu bằng cấu hình giọng của profile, gọi voice
-   * worker (VOICE_WORKER_URL, cùng pattern nlu.service.ts / knowledge.service.ts).
+   * worker qua `VoiceWorkerUrlResolver` (dùng chung với nlu.service.ts /
+   * knowledge.service.ts — DB `voice_worker_settings.internalUrl` -> env
+   * `VOICE_WORKER_URL` -> localhost).
    *
    * Gọi POST /preview/voice — endpoint tổng hợp audio thật. Lưu ý phân biệt
    * với POST /preview (không có hậu tố), vốn chỉ canh nhịp ngắt câu cho kịch
@@ -219,7 +221,7 @@ export class ScriptsService {
    */
   async previewVoiceProfile(id: string): Promise<{ audioBase64: string }> {
     const profile = await this.getVoiceProfile(id)
-    const base = this.config.get<string>('VOICE_WORKER_URL', 'http://localhost:8000')
+    const base = await this.voiceWorkerUrlResolver.resolve()
     const text = `Xin chào, đây là giọng đọc thử của ${profile.displayName}.`
 
     // elevenlabsVoiceId chỉ dùng cho engine elevenlabs; các engine khác đọc

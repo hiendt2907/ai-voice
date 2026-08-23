@@ -36,6 +36,7 @@ export class CallsController {
   constructor(private readonly svc: CallsService) {}
 
   @Get()
+  @Roles('admin', 'operator', 'qa')
   @ApiOperation({ summary: 'List call sessions (paginated)' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
@@ -76,6 +77,7 @@ export class CallsController {
   }
 
   @Get(':id')
+  @Roles('admin', 'operator', 'qa')
   @ApiOperation({ summary: 'Get call session detail' })
   getSession(@Param('id') id: string) {
     return this.svc.getSession(id)
@@ -92,25 +94,32 @@ export class CallsController {
     return this.svc.submitQaScore(id, req.user.userId, dto)
   }
 
+  // Không nằm trong bảng lỗ hổng gốc nhưng phát hiện khi tự xác minh: cùng thiếu
+  // @Roles như /calls, /calls/:id/turns — điểm QA cũng nhạy cảm như transcript,
+  // áp cùng policy admin/operator/qa cho nhất quán.
   @Get(':id/qa-scores')
+  @Roles('admin', 'operator', 'qa')
   @ApiOperation({ summary: 'Get QA scores for a call' })
   getQaScores(@Param('id') id: string) {
     return this.svc.getQaScores(id)
   }
 
   @Get(':id/turns')
+  @Roles('admin', 'operator', 'qa')
   @ApiOperation({ summary: 'Get transcript turns for a call (ordered by seq)' })
   getTurns(@Param('id') id: string) {
     return this.svc.getTurns(id)
   }
 
   @Get(':id/recording')
+  @Roles('admin', 'operator', 'qa')
   @ApiOperation({ summary: 'Get recording metadata for a call' })
   getRecording(@Param('id') id: string) {
     return this.svc.getRecording(id)
   }
 
   @Get(':id/recording/stream')
+  @Roles('admin', 'operator', 'qa')
   @ApiOperation({ summary: 'Stream recording audio for a call' })
   async streamRecording(@Param('id') id: string, @Res() reply: FastifyReply) {
     const stream = await this.svc.streamRecording(id)

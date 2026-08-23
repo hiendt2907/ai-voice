@@ -25,6 +25,8 @@ from typing import Any, Literal
 
 import httpx
 
+from api.internal_auth import internal_headers
+
 from rag.embedder import cosine_similarity
 from rag import redis_vector
 
@@ -102,7 +104,11 @@ async def reload_from_api(api_url: str, campaign_id: str | None = None) -> int:
     """Fetch active articles from NestJS, rebuild store and Redis vectorsets."""
     params = {"campaignId": campaign_id} if campaign_id else {}
     async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(f"{api_url}/internal/knowledge/rag-export", params=params)
+        resp = await client.get(
+            f"{api_url}/internal/knowledge/rag-export",
+            params=params,
+            headers=internal_headers(),
+        )
         resp.raise_for_status()
         raw: list[dict] = resp.json()
 

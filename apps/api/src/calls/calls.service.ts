@@ -10,12 +10,7 @@ import { CallTurn } from './call-turn.entity'
 import { CallRecording } from './call-recording.entity'
 import { CallMetrics } from './call-metrics.entity'
 import { CreateQaScoreDto } from './dto/create-qa-score.dto'
-
-function maskPhone(phone: string): string {
-  const digits = phone.replace(/\D/g, '')
-  if (digits.length <= 4) return '*'.repeat(digits.length)
-  return digits.slice(0, 3) + '*'.repeat(digits.length - 6) + digits.slice(-3)
-}
+import { maskPhone } from '../common/pii.util'
 
 export interface CallEndedPayload {
   sessionId: string

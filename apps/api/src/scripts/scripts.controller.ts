@@ -32,6 +32,7 @@ export class ScriptsController {
   }
 
   @Get()
+  @Roles('admin', 'operator')
   @ApiOperation({ summary: 'List all campaigns' })
   listCampaigns() {
     return this.svc.listCampaigns()
@@ -52,12 +53,14 @@ export class ScriptsController {
   // khớp route tĩnh trước route tham số (đã kiểm chứng bằng curl thật —
   // GET /scripts/voice-profiles vẫn trả đúng danh sách, không rơi vào :id).
   @Get(':id')
+  @Roles('admin', 'operator')
   @ApiOperation({ summary: 'Get campaign with all versions' })
   getCampaign(@Param('id', ParseUUIDPipe) id: string) {
     return this.svc.getCampaign(id)
   }
 
   @Get(':id/related')
+  @Roles('admin', 'operator')
   @ApiOperation({ summary: 'Get KB articles and NLU docs related to this script' })
   getRelated(@Param('id', ParseUUIDPipe) id: string) {
     return this.svc.getRelated(id)
@@ -70,6 +73,7 @@ export class ScriptsController {
   }
 
   @Get(':id/versions')
+  @Roles('admin', 'operator')
   @ApiOperation({ summary: 'List all versions for campaign' })
   listVersions(@Param('id', ParseUUIDPipe) id: string) {
     return this.svc.listVersions(id)

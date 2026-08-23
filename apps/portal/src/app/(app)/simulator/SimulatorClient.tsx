@@ -109,6 +109,7 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
   const [useRealTts, setUseRealTts] = useState(true)
   const [ttsEngine, setTtsEngine] = useState<string>('xkiro')
   const [switchingEngine, setSwitchingEngine] = useState(false)
+  const [ttsSwitchError, setTtsSwitchError] = useState('')
   const [hasSpeechRecognition, setHasSpeechRecognition] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -420,16 +421,25 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
               value={ttsEngine}
               onChange={(e) => {
                 const engine = e.target.value
+                const previousEngine = ttsEngine
                 setSwitchingEngine(true)
+                setTtsSwitchError('')
                 void (async () => {
                   try {
                     const cur = await fetch('/api/v1/settings/tts').then((r) => r.ok ? r.json() as Promise<Record<string, unknown>> : {})
-                    await fetch('/api/v1/settings/tts', {
+                    const res = await fetch('/api/v1/settings/tts', {
                       method: 'PUT',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ ...cur, engine }),
                     })
+                    if (!res.ok) {
+                      const body = (await res.json().catch(() => ({}))) as { message?: string }
+                      throw new Error(body.message ?? `HTTP ${res.status}`)
+                    }
                     setTtsEngine(engine)
+                  } catch (err) {
+                    setTtsEngine(previousEngine)
+                    setTtsSwitchError(err instanceof Error ? err.message : 'Không thể đổi TTS engine — vui lòng thử lại')
                   } finally {
                     setSwitchingEngine(false)
                   }
@@ -518,6 +528,14 @@ export function SimulatorClient({ campaigns }: { campaigns: Campaign[] }) {
             <WsStatusBadge status={wsStatus} />
           </div>
         </div>
+
+        {/* Lỗi đổi TTS engine */}
+        {ttsSwitchError && (
+          <div className="flex items-center gap-2 px-5 py-2 bg-[oklch(97%_0.02_25)] border-b border-[oklch(88%_0.05_25)] text-xs text-[oklch(45%_0.18_25)]">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            {ttsSwitchError}
+          </div>
+        )}
 
         {/* AI Speaking indicator (audio mode only) */}
         {audioMode && aiSpeaking && (

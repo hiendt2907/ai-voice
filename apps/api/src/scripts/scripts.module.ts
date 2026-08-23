@@ -10,11 +10,13 @@ import { ScriptLintService } from './lint/script-lint.service'
 import { ScriptsService } from './scripts.service'
 import { ScriptsController } from './scripts.controller'
 import { AuditModule } from '../audit/audit.module'
+import { VoiceWorkerUrlModule } from '../common/voice-worker-url.module'
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Campaign, ScriptVersion, VoiceProfile, HotlineRoute, KnowledgeArticle, NluDocument]),
     AuditModule,
+    VoiceWorkerUrlModule,
   ],
   providers: [ScriptLintService, ScriptsService],
   controllers: [ScriptsController],

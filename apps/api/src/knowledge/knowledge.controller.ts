@@ -36,6 +36,7 @@ export class KnowledgeController {
   ) {}
 
   @Get()
+  @Roles('admin', 'operator')
   @ApiOperation({ summary: 'List KB articles' })
   @ApiQuery({ name: 'category', required: false })
   @ApiQuery({ name: 'all', required: false, type: Boolean })
@@ -50,6 +51,7 @@ export class KnowledgeController {
   }
 
   @Get(':id')
+  @Roles('admin', 'operator')
   @ApiOperation({ summary: 'Get KB article by id' })
   get(@Param('id') id: string) {
     return this.svc.get(id)

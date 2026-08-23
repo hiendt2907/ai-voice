@@ -381,7 +381,6 @@ async def async_process_turn(
     state: SessionState,
     script_body: dict,
     utterance: str | None,
-    nlu: Any | None = None,
 ) -> TurnResult:
     """Async version with stateful LLM NLU (primary) + vector NLU (fallback)."""
     if not utterance:

@@ -1,5 +1,5 @@
-import { Controller, Post, Get, Patch, Body, Param, Query, Logger } from '@nestjs/common'
-import { ApiTags, ApiOperation } from '@nestjs/swagger'
+import { Controller, Post, Get, Patch, Body, Param, Query, Logger, UseGuards } from '@nestjs/common'
+import { ApiTags, ApiOperation, ApiSecurity } from '@nestjs/swagger'
 import { IsString, IsOptional, IsArray, IsNumber, IsObject, IsIn } from 'class-validator'
 import { CallsService } from '../calls/calls.service'
 import { CallbacksService } from '../callbacks/callbacks.service'
@@ -8,6 +8,7 @@ import { KnowledgeService } from '../knowledge/knowledge.service'
 import { LearningService } from '../learning/learning.service'
 import { NluService } from '../nlu/nlu.service'
 import { ScriptsService } from '../scripts/scripts.service'
+import { InternalAuthGuard } from './internal-auth.guard'
 
 class CallEndedDto {
   @IsString()
@@ -84,7 +85,12 @@ class QuestionAnsweredDto {
   answer: string
 }
 
+// Yêu cầu header x-internal-key khớp một ServiceApiKey đang active (xem
+// internal-auth.guard.ts). Trước bản vá này controller KHÔNG có guard nào —
+// toàn bộ /internal/* mở ra internet không cần token, đã kiểm chứng thật.
 @ApiTags('internal')
+@ApiSecurity('internal-key')
+@UseGuards(InternalAuthGuard)
 @Controller('internal')
 export class InternalController {
   private readonly logger = new Logger(InternalController.name)
@@ -100,19 +106,19 @@ export class InternalController {
   ) {}
 
   @Get('scripts/:campaignId/active')
-  @ApiOperation({ summary: 'Get the published script body for a campaign — service-to-service (no auth)' })
+  @ApiOperation({ summary: 'Get the published script body for a campaign — service-to-service, requires x-internal-key' })
   getActiveScript(@Param('campaignId') campaignId: string) {
     return this.scriptsService.getActiveScript(campaignId)
   }
 
   @Get('knowledge/rag-export')
-  @ApiOperation({ summary: 'Export KB articles with embeddings — service-to-service (no auth)' })
+  @ApiOperation({ summary: 'Export KB articles with embeddings — service-to-service, requires x-internal-key' })
   ragExport(@Query('campaignId') campaignId?: string) {
     return this.knowledgeService.listForRag(campaignId)
   }
 
   @Patch('knowledge/:id/embedding')
-  @ApiOperation({ summary: 'Persist article embedding JSON — voice worker service-to-service (no auth)' })
+  @ApiOperation({ summary: 'Persist article embedding JSON — voice worker service-to-service, requires x-internal-key' })
   updateEmbedding(@Param('id') id: string, @Body('embeddingJson') embeddingJson: string) {
     return this.knowledgeService.updateEmbedding(id, embeddingJson)
   }
@@ -185,13 +191,13 @@ export class InternalController {
   }
 
   @Get('nlu/export')
-  @ApiOperation({ summary: 'Export all active NLU documents with embeddings — service-to-service (no auth)' })
+  @ApiOperation({ summary: 'Export all active NLU documents with embeddings — service-to-service, requires x-internal-key' })
   nluExport(@Query('campaignId') campaignId?: string) {
     return this.nluService.listForExport(campaignId)
   }
 
   @Patch('nlu/:id/embedding')
-  @ApiOperation({ summary: 'Persist NLU doc embedding JSON — voice worker service-to-service (no auth)' })
+  @ApiOperation({ summary: 'Persist NLU doc embedding JSON — voice worker service-to-service, requires x-internal-key' })
   updateNluEmbedding(@Param('id') id: string, @Body('embeddingJson') embeddingJson: string) {
     return this.nluService.updateEmbedding(id, embeddingJson)
   }

@@ -37,6 +37,7 @@ export class NluController {
   ) {}
 
   @Get('documents')
+  @Roles('admin', 'operator')
   @ApiOperation({ summary: 'List NLU documents' })
   @ApiQuery({ name: 'type', required: false, enum: ['intent', 'filler', 'reprompt', 'dialog_node'] })
   @ApiQuery({ name: 'campaignId', required: false })
@@ -52,6 +53,7 @@ export class NluController {
   }
 
   @Get('documents/:id')
+  @Roles('admin', 'operator')
   @ApiOperation({ summary: 'Get NLU document by id' })
   get(@Param('id') id: string) {
     return this.svc.get(id)

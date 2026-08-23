@@ -1,10 +1,43 @@
-import { Controller, Post, HttpCode } from '@nestjs/common'
+import {
+  Controller,
+  Post,
+  HttpCode,
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { InjectDataSource } from '@nestjs/typeorm'
 import { DataSource } from 'typeorm'
 import * as bcrypt from 'bcrypt'
 import { KnowledgeService } from '../knowledge/knowledge.service'
 import { NluService } from '../nlu/nlu.service'
 import { NLU_SEED_DOCS } from '../nlu/nlu.seed'
+
+// Lớp bảo vệ tối thiểu cho DevController: trước đây an toàn của các endpoint
+// /dev/seed và /dev/wipe CHỈ dựa vào việc DevModule không được đăng ký khi
+// NODE_ENV=production (app.module.ts). Đó là một điểm lỗi duy nhất (single
+// point of failure) — set nhầm biến môi trường là lộ toàn bộ. Guard này thêm
+// một lớp phòng thủ độc lập ngay trong controller: bắt buộc phải có header
+// `x-dev-seed-token` khớp với biến môi trường DEV_SEED_TOKEN. Không dùng
+// JwtAuthGuard ở đây vì /dev/seed chính là bước khởi tạo user admin đầu tiên
+// (chicken-and-egg: chưa có admin thì chưa có JWT để gọi seed).
+@Injectable()
+class DevSeedGuard implements CanActivate {
+  constructor(private readonly config: ConfigService) {}
+
+  canActivate(ctx: ExecutionContext): boolean {
+    const req = ctx.switchToHttp().getRequest<{ headers: Record<string, string | undefined> }>()
+    const expected = this.config.getOrThrow<string>('DEV_SEED_TOKEN')
+    const provided = req.headers['x-dev-seed-token']
+    if (!provided || provided !== expected) {
+      throw new UnauthorizedException('Thiếu hoặc sai header x-dev-seed-token')
+    }
+    return true
+  }
+}
 
 const KB_ARTICLES = [
   {
@@ -322,20 +355,59 @@ const KB_ARTICLES = [
   },
 ]
 
-const SEED_USERS = [
-  { email: 'admin@doctorcheck.vn', password: 'Admin@2024!', fullName: 'Admin', role: 'admin' },
-  { email: 'operator@doctorcheck.vn', password: 'Operator@2024!', fullName: 'Operator', role: 'operator' },
-  { email: 'qa@doctorcheck.vn', password: 'Qa@2024!', fullName: 'QA Reviewer', role: 'qa' },
-  { email: 'viewer@doctorcheck.vn', password: 'Viewer@2024!', fullName: 'Viewer', role: 'viewer' },
-]
+// Mật khẩu seed KHÔNG còn hardcode plaintext trong source — lấy từ biến môi
+// trường, bắt buộc phải có (getOrThrow), KHÔNG có giá trị mặc định. Thiếu biến
+// nào thì app từ chối khởi động (constructor throw ngay), thay vì âm thầm
+// seed bằng mật khẩu đoán được. Đây chỉ là đường SEED cho 4 user
+// admin@doctorcheck.vn / operator@doctorcheck.vn / qa@doctorcheck.vn /
+// viewer@doctorcheck.vn — hoàn toàn tách biệt với tài khoản production thật
+// admin@aivoice.asia, và seed() bên dưới bỏ qua (continue) nếu email đã tồn
+// tại trong DB nên không ghi đè mật khẩu của user đã có sẵn.
+interface SeedUser {
+  email: string
+  password: string
+  fullName: string
+  role: string
+}
 
 @Controller('dev')
+@UseGuards(DevSeedGuard)
 export class DevController {
+  private readonly seedUsers: SeedUser[]
+
   constructor(
     @InjectDataSource() private readonly ds: DataSource,
     private readonly knowledge: KnowledgeService,
     private readonly nlu: NluService,
-  ) {}
+    private readonly config: ConfigService,
+  ) {
+    this.seedUsers = [
+      {
+        email: 'admin@doctorcheck.vn',
+        password: this.config.getOrThrow<string>('DEV_SEED_ADMIN_PASSWORD'),
+        fullName: 'Admin',
+        role: 'admin',
+      },
+      {
+        email: 'operator@doctorcheck.vn',
+        password: this.config.getOrThrow<string>('DEV_SEED_OPERATOR_PASSWORD'),
+        fullName: 'Operator',
+        role: 'operator',
+      },
+      {
+        email: 'qa@doctorcheck.vn',
+        password: this.config.getOrThrow<string>('DEV_SEED_QA_PASSWORD'),
+        fullName: 'QA Reviewer',
+        role: 'qa',
+      },
+      {
+        email: 'viewer@doctorcheck.vn',
+        password: this.config.getOrThrow<string>('DEV_SEED_VIEWER_PASSWORD'),
+        fullName: 'Viewer',
+        role: 'viewer',
+      },
+    ]
+  }
 
   @Post('seed')
   @HttpCode(200)
@@ -343,7 +415,7 @@ export class DevController {
     const userResults: { email: string; created: boolean }[] = []
 
     // Seed users
-    for (const u of SEED_USERS) {
+    for (const u of this.seedUsers) {
       const existing = await this.ds.query<{ id: string }[]>(
         'SELECT id FROM users WHERE email = $1',
         [u.email],

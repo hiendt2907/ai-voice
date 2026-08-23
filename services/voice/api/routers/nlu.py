@@ -10,6 +10,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from api.config import Settings
+from api.internal_auth import internal_headers
 from rag.embedder import embed_query
 
 settings = Settings()
@@ -42,6 +43,7 @@ async def embed_nlu_doc(req: EmbedNluRequest) -> EmbedNluResponse:
             resp = await client.patch(
                 f"{settings.api_url}/internal/nlu/{req.doc_id}/embedding",
                 json={"embeddingJson": embedding_json},
+                headers=internal_headers(),
             )
             resp.raise_for_status()
     except Exception as exc:

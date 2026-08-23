@@ -3,6 +3,8 @@ import logging
 from dataclasses import dataclass
 
 import httpx
+
+from api.internal_auth import internal_headers
 import redis.asyncio as aioredis
 
 from .config import Settings
@@ -267,7 +269,7 @@ class RemoteConfig:
         url = f"{self._settings.nestjs_url}/api/v1/internal/system-settings"
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                res = await client.get(url)
+                res = await client.get(url, headers=internal_headers())
                 res.raise_for_status()
                 raw: dict = res.json()  # type: ignore[type-arg]
 

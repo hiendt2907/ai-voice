@@ -1,6 +1,8 @@
 import Link from 'next/link'
-import { Star, CheckCircle2, ArrowRight, Clock } from 'lucide-react'
+import { Star, CheckCircle2, ArrowRight, Clock, ChevronLeft, ChevronRight } from 'lucide-react'
 import { serverFetch } from '@/lib/api/server'
+
+const PAGE_SIZE = 20
 
 interface CallSession {
   id: string
@@ -14,14 +16,28 @@ interface CallSession {
 
 type TabId = 'pending' | 'reviewed' | 'all'
 
-async function fetchQaQueue(tab: TabId): Promise<CallSession[]> {
+interface QaQueueResult {
+  queue: CallSession[]
+  total: number
+}
+
+// Tab "pending"/"reviewed" dùng /calls/qa-queue — API này chưa hỗ trợ phân trang,
+// nên chỉ tab "all" (dùng /calls, đã có page/limit) mới phân trang thật.
+async function fetchQaQueue(tab: TabId, page: number): Promise<QaQueueResult> {
   try {
-    if (tab === 'pending') return await serverFetch<CallSession[]>('/calls/qa-queue')
-    if (tab === 'reviewed') return await serverFetch<CallSession[]>('/calls/qa-queue?reviewed=true')
-    const resp = await serverFetch<{ data: CallSession[]; total: number }>('/calls?limit=50')
-    return resp.data
+    if (tab === 'pending') {
+      const data = await serverFetch<CallSession[]>('/calls/qa-queue')
+      return { queue: data, total: data.length }
+    }
+    if (tab === 'reviewed') {
+      const data = await serverFetch<CallSession[]>('/calls/qa-queue?reviewed=true')
+      return { queue: data, total: data.length }
+    }
+    const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) })
+    const resp = await serverFetch<{ data: CallSession[]; total: number }>(`/calls?${params.toString()}`)
+    return { queue: resp.data, total: resp.total }
   } catch {
-    return []
+    return { queue: [], total: 0 }
   }
 }
 
@@ -34,11 +50,19 @@ const TABS: { id: TabId; label: string }[] = [
 export default async function QaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>
+  searchParams: Promise<{ tab?: string; page?: string }>
 }) {
   const params = await searchParams
   const tab = (params.tab ?? 'pending') as TabId
-  const queue = await fetchQaQueue(tab)
+  const page = Math.max(1, Number(params.page ?? 1) || 1)
+  const { queue, total } = await fetchQaQueue(tab, page)
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  // Giữ nguyên tab khi chuyển trang.
+  function pageHref(targetPage: number): string {
+    const qp = new URLSearchParams({ tab, page: String(targetPage) })
+    return `/qa?${qp.toString()}`
+  }
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
@@ -47,7 +71,7 @@ export default async function QaPage({
           QA Review Queue
         </h1>
         <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          {tab === 'pending' ? `${queue.length} cuộc gọi chờ đánh giá` : `${queue.length} cuộc gọi`}
+          {tab === 'pending' ? `${total} cuộc gọi chờ đánh giá` : `${total} cuộc gọi`}
         </p>
       </div>
 
@@ -113,6 +137,39 @@ export default async function QaPage({
               <ArrowRight className="w-4 h-4 text-[var(--color-text-muted)] group-hover:text-[var(--color-accent)] transition-colors" />
             </Link>
           ))}
+
+          {/* Phân trang — chỉ tab "all" dùng /calls (đã hỗ trợ page/limit) */}
+          {tab === 'all' && totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-overlay)]">
+              <Link
+                href={pageHref(Math.max(1, page - 1))}
+                aria-disabled={page <= 1}
+                className={`inline-flex items-center gap-1 text-xs font-medium ${
+                  page <= 1
+                    ? 'pointer-events-none text-[var(--color-text-muted)] opacity-50'
+                    : 'text-[var(--color-text)] hover:text-[var(--color-accent)]'
+                }`}
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                Trang trước
+              </Link>
+              <span className="text-xs text-[var(--color-text-muted)]">
+                Trang {page} / {totalPages} ({total} cuộc gọi)
+              </span>
+              <Link
+                href={pageHref(Math.min(totalPages, page + 1))}
+                aria-disabled={page >= totalPages}
+                className={`inline-flex items-center gap-1 text-xs font-medium ${
+                  page >= totalPages
+                    ? 'pointer-events-none text-[var(--color-text-muted)] opacity-50'
+                    : 'text-[var(--color-text)] hover:text-[var(--color-accent)]'
+                }`}
+              >
+                Trang sau
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          )}
         </div>
       )}
     </div>

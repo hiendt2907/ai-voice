@@ -1,22 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
-import { ConfigService } from '@nestjs/config'
 import { KnowledgeArticle } from './knowledge-article.entity'
 import { CreateArticleDto } from './dto/create-article.dto'
 import { UpdateArticleDto } from './dto/update-article.dto'
+import { VoiceWorkerUrlResolver } from '../common/voice-worker-url.resolver'
 
 @Injectable()
 export class KnowledgeService {
-  private readonly voiceWorkerUrl: string
-
   constructor(
     @InjectRepository(KnowledgeArticle)
     private readonly repo: Repository<KnowledgeArticle>,
-    private readonly config: ConfigService,
-  ) {
-    this.voiceWorkerUrl = this.config.get<string>('VOICE_WORKER_URL', 'http://localhost:8000')
-  }
+    private readonly voiceWorkerUrlResolver: VoiceWorkerUrlResolver,
+  ) {}
 
   list(category?: string, activeOnly = true) {
     const qb = this.repo.createQueryBuilder('a').orderBy('a.createdAt', 'DESC')
@@ -88,7 +84,8 @@ export class KnowledgeService {
 
   async testSearch(query: string, limit = 3): Promise<unknown> {
     try {
-      const res = await fetch(`${this.voiceWorkerUrl}/rag/test-search`, {
+      const base = await this.voiceWorkerUrlResolver.resolve()
+      const res = await fetch(`${base}/rag/test-search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, limit }),
@@ -103,7 +100,8 @@ export class KnowledgeService {
 
   private async triggerEmbed(articleId: string, texts: string[]): Promise<void> {
     try {
-      await fetch(`${this.voiceWorkerUrl}/rag/embed`, {
+      const base = await this.voiceWorkerUrlResolver.resolve()
+      await fetch(`${base}/rag/embed`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ article_id: articleId, texts }),
@@ -115,7 +113,8 @@ export class KnowledgeService {
 
   private async triggerReload(): Promise<void> {
     try {
-      await fetch(`${this.voiceWorkerUrl}/rag/reload`, { method: 'POST' })
+      const base = await this.voiceWorkerUrlResolver.resolve()
+      await fetch(`${base}/rag/reload`, { method: 'POST' })
     } catch {
       // Non-fatal — article saved, will be picked up on the next reload anyway
     }

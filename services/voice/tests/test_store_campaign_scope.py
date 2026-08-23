@@ -20,9 +20,10 @@ CAMPAIGN_A = "11111111-1111-1111-1111-111111111111"
 def _patch_async_client(monkeypatch, target, captured: dict) -> None:
     """Patch httpx.AsyncClient in `target` module to capture get() params."""
 
-    async def fake_get(url, params=None):
+    async def fake_get(url, params=None, headers=None):
         captured["url"] = url
         captured["params"] = params
+        captured["headers"] = headers
         resp = MagicMock()
         resp.raise_for_status = MagicMock()
         resp.json = MagicMock(return_value=[])

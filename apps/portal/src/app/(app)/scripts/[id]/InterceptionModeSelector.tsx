@@ -49,32 +49,49 @@ export function InterceptionModeSelector({ campaignId, initialMode, initialDomai
   const [mode, setMode] = useState<Mode>(initialMode)
   const [domains, setDomains] = useState<string[]>(initialDomains ?? [])
   const [saving, setSaving] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  // Giá trị mode/domains đã lưu thành công lần gần nhất trên server — dùng để
+  // rollback khi PATCH thất bại, tránh UI hiện như đã lưu trong khi backend lỗi.
+  const [confirmedMode, setConfirmedMode] = useState<Mode>(initialMode)
+  const [confirmedDomains, setConfirmedDomains] = useState<string[]>(initialDomains ?? [])
 
   function toggleDomain(d: string) {
     setDomains((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d])
   }
 
-  async function save(newMode: Mode, newDomains: string[]) {
+  async function save(newMode: Mode, newDomains: string[], rollbackMode: Mode, rollbackDomains: string[]) {
     setSaving(true)
+    setErrorMsg(null)
     try {
-      await fetch(`/api/v1/scripts/${campaignId}`, {
+      const res = await fetch(`/api/v1/scripts/${campaignId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ interceptionMode: newMode, interceptionDomains: newDomains }),
       })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { message?: string }
+        throw new Error(body.message ?? `HTTP ${res.status}`)
+      }
+      setConfirmedMode(newMode)
+      setConfirmedDomains(newDomains)
       router.refresh()
+    } catch (e) {
+      setMode(rollbackMode)
+      setDomains(rollbackDomains)
+      setErrorMsg(e instanceof Error ? e.message : 'Không thể kết nối tới server')
     } finally {
       setSaving(false)
     }
   }
 
   function selectMode(m: Mode) {
+    const previousMode = mode
     setMode(m)
-    void save(m, domains)
+    void save(m, domains, previousMode, domains)
   }
 
   function saveDomains() {
-    void save(mode, domains)
+    void save(mode, domains, confirmedMode, confirmedDomains)
   }
 
   const current = MODES.find((m) => m.value === mode)!
@@ -102,6 +119,10 @@ export function InterceptionModeSelector({ campaignId, initialMode, initialDomai
       </div>
 
       <p className="text-xs text-[var(--color-text-muted)]">{current.hint}</p>
+
+      {errorMsg && (
+        <p className="text-xs text-[oklch(42%_0.2_27)]">{errorMsg}</p>
+      )}
 
       {mode === 'medium' && (
         <div className="pt-2 border-t border-[var(--color-border)]">

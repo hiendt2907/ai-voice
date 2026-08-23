@@ -112,7 +112,6 @@ class TurnOrchestrator:
         ctx: CallContext,
         active_call: ActiveCall | None,
         *,
-        nlu: object | None,
         tts_chain: object | None,
         tts: object | None,
         settings: Any,
@@ -122,7 +121,6 @@ class TurnOrchestrator:
         self.dialogue = dialogue
         self.ctx = ctx
         self.active_call = active_call
-        self.nlu = nlu
         self.tts_chain = tts_chain
         self.tts = tts
         self.settings = settings
@@ -286,7 +284,7 @@ class TurnOrchestrator:
         step_from = self.state.current_step_id
         with obs.span("nlu", parent=self.ctx.otel_ctx, **{"turn": self.turn}) as nlu_span:
             _t_nlu = time.perf_counter()
-            result = await async_process_turn(self.state, self.ctx.script, utterance, self.nlu)
+            result = await async_process_turn(self.state, self.ctx.script, utterance)
             trace.nlu_ms = round((time.perf_counter() - _t_nlu) * 1000, 1)
             trace.nlu_intent = result.intent
             trace.nlu_confidence = result.nlu_confidence

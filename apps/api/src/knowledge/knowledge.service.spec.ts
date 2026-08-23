@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { getRepositoryToken } from '@nestjs/typeorm'
-import { ConfigService } from '@nestjs/config'
 import { Repository } from 'typeorm'
 import { KnowledgeService } from './knowledge.service'
 import { KnowledgeArticle } from './knowledge-article.entity'
+import { VoiceWorkerUrlResolver } from '../common/voice-worker-url.resolver'
 
 /**
  * Part A — RAG export scoping.
@@ -24,7 +24,7 @@ describe('KnowledgeService.listForRag', () => {
       providers: [
         KnowledgeService,
         { provide: getRepositoryToken(KnowledgeArticle), useValue: repo },
-        { provide: ConfigService, useValue: { get: () => 'http://localhost:8001' } },
+        { provide: VoiceWorkerUrlResolver, useValue: { resolve: async () => 'http://localhost:8001' } },
       ],
     }).compile()
 

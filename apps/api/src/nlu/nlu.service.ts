@@ -1,22 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
-import { ConfigService } from '@nestjs/config'
 import { NluDocument, NluDocType } from './nlu-document.entity'
 import { CreateNluDocDto } from './dto/create-nlu-doc.dto'
 import { UpdateNluDocDto } from './dto/update-nlu-doc.dto'
+import { VoiceWorkerUrlResolver } from '../common/voice-worker-url.resolver'
 
 @Injectable()
 export class NluService {
-  private readonly voiceWorkerUrl: string
-
   constructor(
     @InjectRepository(NluDocument)
     private readonly repo: Repository<NluDocument>,
-    private readonly config: ConfigService,
-  ) {
-    this.voiceWorkerUrl = this.config.get<string>('VOICE_WORKER_URL', 'http://localhost:8000')
-  }
+    private readonly voiceWorkerUrlResolver: VoiceWorkerUrlResolver,
+  ) {}
 
   list(type?: NluDocType, campaignId?: string, activeOnly = true, scriptId?: string) {
     const qb = this.repo.createQueryBuilder('d').orderBy('d.type').addOrderBy('d.label').addOrderBy('d.createdAt', 'DESC')
@@ -86,7 +82,8 @@ export class NluService {
 
   private async triggerEmbed(docId: string, content: string): Promise<void> {
     try {
-      await fetch(`${this.voiceWorkerUrl}/nlu/embed`, {
+      const base = await this.voiceWorkerUrlResolver.resolve()
+      await fetch(`${base}/nlu/embed`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ doc_id: docId, content }),
@@ -98,7 +95,8 @@ export class NluService {
 
   private async triggerReload(): Promise<void> {
     try {
-      await fetch(`${this.voiceWorkerUrl}/nlu/reload`, { method: 'POST' })
+      const base = await this.voiceWorkerUrlResolver.resolve()
+      await fetch(`${base}/nlu/reload`, { method: 'POST' })
     } catch {
       // Non-fatal — doc saved, will be picked up on the next reload anyway
     }

@@ -519,7 +519,6 @@ class CallSimulator:
     def _print_agent_beat(self, msg: dict[str, Any], ttfa_ms: float | None = None) -> None:
         text = msg.get("text", "")
         pause_ms = msg.get("pause_ms", 0)
-        step_id = msg.get("step_id", "")
         turn = msg.get("turn", 0)
 
         ttfa_str = ""

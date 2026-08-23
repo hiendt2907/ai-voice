@@ -275,7 +275,7 @@ function CreateForm({
   onCancel,
 }: {
   defaultType: NluDocType
-  onSubmit: (data: Partial<NluDocument>) => void
+  onSubmit: (data: Partial<NluDocument>) => void | Promise<void>
   onCancel: () => void
 }) {
   const [type, setType] = useState<NluDocType>(defaultType)
@@ -283,9 +283,12 @@ function CreateForm({
   const [content, setContent] = useState('')
   const [metaRaw, setMetaRaw] = useState('{}')
   const [metaError, setMetaError] = useState(false)
+  // Chống double-submit: bấm nhanh 2 lần trước khi request đầu hoàn tất sẽ tạo trùng document.
+  const [submitting, setSubmitting] = useState(false)
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (submitting) return
     let meta: Record<string, unknown> = {}
     try {
       meta = JSON.parse(metaRaw) as Record<string, unknown>
@@ -294,13 +297,18 @@ function CreateForm({
       setMetaError(true)
       return
     }
-    onSubmit({ type, label: label.trim(), content: content.trim(), meta })
+    setSubmitting(true)
+    try {
+      await onSubmit({ type, label: label.trim(), content: content.trim(), meta })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const typeDescription = TYPE_DESCRIPTIONS[type]
 
   return (
-    <form onSubmit={handleSubmit} className="mb-6 p-5 rounded-xl border border-[var(--color-accent)] bg-blue-50/30 space-y-4">
+    <form onSubmit={(e) => void handleSubmit(e)} className="mb-6 p-5 rounded-xl border border-[var(--color-accent)] bg-blue-50/30 space-y-4">
       <h3 className="text-sm font-semibold text-[var(--color-text)]">Tạo NLU document mới</h3>
 
       <div className="grid grid-cols-2 gap-4">
@@ -376,11 +384,11 @@ function CreateForm({
       </div>
 
       <div className="flex gap-3 justify-end">
-        <button type="button" onClick={onCancel} className="px-4 py-2 rounded-lg border border-[var(--color-border)] text-sm text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)] transition-colors">
+        <button type="button" onClick={onCancel} disabled={submitting} className="px-4 py-2 rounded-lg border border-[var(--color-border)] text-sm text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)] disabled:opacity-50 transition-colors">
           Hủy
         </button>
-        <button type="submit" className="px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] transition-colors">
-          Tạo & Embed
+        <button type="submit" disabled={submitting} className="px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] disabled:opacity-50 transition-colors">
+          {submitting ? 'Đang tạo…' : 'Tạo & Embed'}
         </button>
       </div>
     </form>

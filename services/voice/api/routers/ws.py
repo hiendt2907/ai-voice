@@ -22,6 +22,7 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from api.config import Settings
+from api.internal_auth import internal_headers
 from call.dialogue import DialogueEngine
 from call.egress import EgressSender
 from call.events import (
@@ -34,9 +35,7 @@ from call.events import (
 from call.media import MediaRouter
 from call.session import default_session_manager
 from call.turn import TurnOrchestrator
-from llm.client import LLMClient
 from llm.conversation import ConversationEngine
-from llm.nlu import LLMNLUClassifier
 from obs import tracing as obs
 from runtime.executor import create_session
 from telephony import TelephonyAdapter, get_adapter
@@ -61,7 +60,7 @@ async def _fetch_active_script(campaign_id: str) -> dict | None:  # type: ignore
     url = f"{_settings.api_url}/internal/scripts/{campaign_id}/active"
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(url)
+            resp = await client.get(url, headers=internal_headers())
             resp.raise_for_status()
             version = resp.json()
             return version.get("body")
@@ -131,21 +130,6 @@ async def tts_health() -> dict:
         return {"error": str(exc)}
 
 
-def _build_nlu() -> LLMNLUClassifier | None:
-    if not _settings.use_llm_nlu:
-        return None
-    client = LLMClient(
-        base_url=_settings.llm_base_url,
-        model=_settings.llm_model,
-        api_key=_settings.llm_api_key,
-        timeout_s=_settings.llm_timeout_s,
-        fallback_models=[
-            m.strip() for m in (_settings.llm_fallback_models or "").split(",") if m.strip()
-        ],
-    )
-    return LLMNLUClassifier(client)
-
-
 def _index_steps(script: dict) -> dict[str, dict]:
     return {s["id"]: s for s in script.get("steps", [])}
 
@@ -181,11 +165,10 @@ async def _post_call_events(ctx: CallContext, turn_orch: TurnOrchestrator, start
         },
     }
     try:
-        headers: dict[str, str] = {}
-        if _settings.service_api_key:
-            headers["x-internal-key"] = _settings.service_api_key
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(_settings.nestjs_webhook_url, json=payload, headers=headers)
+            resp = await client.post(
+                _settings.nestjs_webhook_url, json=payload, headers=internal_headers()
+            )
             resp.raise_for_status()
             logger.info("Call-events posted: session=%s status=%s", state.session_id, state.status)
     except Exception as exc:
@@ -252,7 +235,6 @@ async def call_ws(
             remote_cfg.conversation.ollama_model, remote_cfg.conversation.sentiment_enabled,
         )
 
-    nlu = _build_nlu()
     media = MediaRouter(
         session_id="", egress=egress, use_silero_vad=_settings.use_silero_vad
     )  # session_id filled in on START
@@ -269,7 +251,7 @@ async def call_ws(
     )
     turn_orch = TurnOrchestrator(
         egress, media, dialogue, ctx, active_call,
-        nlu=nlu, tts_chain=tts_chain, tts=tts, settings=_settings,
+        tts_chain=tts_chain, tts=tts, settings=_settings,
     )
 
     pipeline_task = None

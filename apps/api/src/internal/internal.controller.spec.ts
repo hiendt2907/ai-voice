@@ -1,15 +1,21 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { InternalController } from './internal.controller'
+import { InternalAuthGuard } from './internal-auth.guard'
 import { CallsService } from '../calls/calls.service'
 import { CallbacksService } from '../callbacks/callbacks.service'
 import { SettingsService } from '../settings/settings.service'
 import { KnowledgeService } from '../knowledge/knowledge.service'
 import { LearningService } from '../learning/learning.service'
 import { NluService } from '../nlu/nlu.service'
+import { ScriptsService } from '../scripts/scripts.service'
 
 /**
  * Part A — the export endpoints must forward campaignId down to the services
  * so the voice worker can scope KB/NLU per campaign.
+ *
+ * These tests call controller methods directly (bypassing HTTP/guards), so
+ * the class-level @UseGuards(InternalAuthGuard) is overridden with a stub —
+ * auth behavior itself is covered separately in internal-auth.guard.spec.ts.
  */
 describe('InternalController export scoping', () => {
   let controller: InternalController
@@ -29,8 +35,12 @@ describe('InternalController export scoping', () => {
         { provide: KnowledgeService, useValue: knowledgeService },
         { provide: LearningService, useValue: {} },
         { provide: NluService, useValue: nluService },
+        { provide: ScriptsService, useValue: {} },
       ],
-    }).compile()
+    })
+      .overrideGuard(InternalAuthGuard)
+      .useValue({ canActivate: () => true })
+      .compile()
 
     controller = moduleRef.get(InternalController)
   })

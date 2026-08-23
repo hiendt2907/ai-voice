@@ -39,6 +39,7 @@ export class LearningController {
   }
 
   @Get('proposals')
+  @Roles('admin', 'qa')
   @ApiOperation({ summary: 'List learning proposals' })
   @ApiQuery({ name: 'status', required: false, enum: ['pending', 'approved', 'rejected'] })
   listProposals(@Query('status') status?: string) {

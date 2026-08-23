@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from api.config import Settings
+from api.internal_auth import internal_headers
 from audio.gender import detect_gender
 
 settings = Settings()
@@ -92,6 +93,7 @@ async def embed_article(req: EmbedRequest) -> EmbedResponse:
             resp = await client.patch(
                 f"{internal_url}/api/v1/internal/knowledge/{req.article_id}/embedding",
                 json={"embeddingJson": embedding_json},
+                headers=internal_headers(),
             )
             resp.raise_for_status()
     except Exception as exc:
