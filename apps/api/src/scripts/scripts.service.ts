@@ -69,13 +69,29 @@ export class ScriptsService {
     return campaign
   }
 
-  async getActiveScript(campaignId: string): Promise<ScriptVersion> {
-    await this.getCampaign(campaignId)
+  /**
+   * `campaign.interceptionMode`/`interceptionDomains` được gắn thêm vào đây vì
+   * đây là endpoint DUY NHẤT voice worker gọi lúc bắt đầu cuộc gọi để lấy
+   * script — trước đây các trường này tồn tại trong DB, có UI chọn Shadow/
+   * Medium/Full (InterceptionModeSelector.tsx) nhưng KHÔNG BAO GIỜ được voice
+   * worker đọc: ws.py chỉ nhận interception_mode từ chính message "start" của
+   * client, và không nơi nào trong repo (SIP bridge, simulator, CloudFone
+   * relay) từng gửi trường đó — mọi cuộc gọi thật luôn chạy mặc định "full"
+   * bất kể admin chọn gì trên Portal. Không đổi shape của `version` (chỉ có
+   * `.body` được ws.py:_fetch_active_script đọc từ trước) — chỉ thêm field
+   * mới, không phá consumer cũ.
+   */
+  async getActiveScript(campaignId: string): Promise<ScriptVersion & { interceptionMode: string; interceptionDomains: string[] }> {
+    const campaign = await this.getCampaign(campaignId)
     const version = await this.versionRepo.findOne({
       where: { campaignId, status: 'published' },
     })
     if (!version) throw new NotFoundException(`No published version for campaign ${campaignId}`)
-    return version
+    return {
+      ...version,
+      interceptionMode: campaign.interceptionMode,
+      interceptionDomains: campaign.interceptionDomains ?? [],
+    }
   }
 
   async listVersions(campaignId: string) {

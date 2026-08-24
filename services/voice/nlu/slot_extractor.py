@@ -181,6 +181,17 @@ def _format_date_vn(dt: datetime) -> str:
     return f"{_weekday_vn(dt.weekday())}, ngày {dt.day:02d}/{dt.month:02d}/{dt.year}"
 
 
+def format_hour_vn(hour: str) -> str:
+    """Render an appointment_hour slot value ("8" or half-hour "8:30") as a
+    natural Vietnamese phrase for TTS/confirmation text: "8 giờ" or "8 giờ
+    30". Shared with runtime/executor.py's own time_slot re-derivation so
+    the two code paths that build {{time_slot}} never drift apart."""
+    if ":" in hour:
+        h, minute = hour.split(":", 1)
+        return f"{h} giờ {minute}"
+    return f"{hour} giờ"
+
+
 def extract_slots(utterance: str) -> dict[str, str]:
     """Extract ALL structured slots from utterance.
 
@@ -274,11 +285,20 @@ def extract_slots(utterance: str) -> dict[str, str]:
         slots["appointment_date"] = appointment_date
 
     # ── Time of day (parse before hour so we can do AM/PM correction) ────────
+    # "tối" alone means the evening buổi-trong-ngày, but the SAME word is also
+    # the first syllable of "tối đa" (maximum) and "tối thiểu" (minimum) —
+    # unrelated số lượng phrasing that has nothing to do with a time of day.
+    # \btối\b still matches inside "tối đa bao nhiêu người" because \b only
+    # checks a word boundary, not the following word. Reproduced directly:
+    # extract_slots('cho tôi hỏi tối đa bao nhiêu người') used to return
+    # time_of_day="tối" and clobbered a same-turn "buổi sáng" appointment.
+    # The negative lookahead below excludes just those two compounds and
+    # leaves every real "buổi tối" / "N giờ tối" mention matching as before.
     if re.search(r"\bsáng\b", utterance, re.IGNORECASE):
         slots["time_of_day"] = "sáng"
     elif re.search(r"\bchiều\b", utterance, re.IGNORECASE):
         slots["time_of_day"] = "chiều"
-    elif re.search(r"\btối\b", utterance, re.IGNORECASE):
+    elif re.search(r"\btối\b(?!\s*(?:đa|thiểu)\b)", utterance, re.IGNORECASE):
         slots["time_of_day"] = "tối"
 
     # ── Hour ────────────────────────────────────────────────────────────────
@@ -292,11 +312,27 @@ def extract_slots(utterance: str) -> dict[str, str]:
     # bare mention (not the first) matches how this file already treats
     # other self-corrected values (date, time_of_day) — the caller's final
     # stated number wins over an earlier aside.
-    anchored = list(re.finditer(r"(?:lúc|khoảng|đặt)\s+(\d{1,2})\s*(?:giờ|h)\b", utt, re.IGNORECASE))
-    bare = list(re.finditer(r"(\d{1,2})\s*(?:giờ|h)\b", utt, re.IGNORECASE))
+    #
+    # "rưỡi" (half past) is extremely common in spoken Vietnamese ("7 rưỡi
+    # sáng", "8 giờ rưỡi") and used to be invisible to this regex entirely —
+    # neither "giờ" nor "h" follows the digit, so the whole mention was
+    # dropped. Reproduced directly: extract_slots('đặt cho tôi 7 rưỡi sáng
+    # nhé') returned no appointment_hour at all, and 'đặt lúc 8 giờ rưỡi
+    # sáng' silently rounded down to a bare "8", losing the half hour. The
+    # suffix alternation below tries "giờ rưỡi" before bare "rưỡi" so a
+    # half-hour mention is captured either with or without "giờ" in between.
+    # The trailing negative lookahead avoids false positives on unrelated
+    # "N rưỡi triệu/nghìn/ngàn" (money) mentions that share the same shape.
+    hour_suffix = r"(giờ\s*rưỡi|rưỡi|giờ|h)"
+    not_money = r"(?!\s*(?:triệu|nghìn|ngàn)\b)"
+    anchored = list(re.finditer(
+        rf"(?:lúc|khoảng|đặt)\s+(\d{{1,2}})\s*{hour_suffix}\b{not_money}", utt, re.IGNORECASE,
+    ))
+    bare = list(re.finditer(rf"(\d{{1,2}})\s*{hour_suffix}\b{not_money}", utt, re.IGNORECASE))
     hour_m = anchored[-1] if anchored else (bare[-1] if bare else None)
     if hour_m:
         h = int(hour_m.group(1))
+        is_half = "rưỡi" in hour_m.group(2)
         # AM/PM correction: "3h chiều" → 15, "11h sáng" → 11
         tod = slots.get("time_of_day")
         if tod == "chiều" and 1 <= h <= 6:
@@ -304,17 +340,23 @@ def extract_slots(utterance: str) -> dict[str, str]:
         elif tod == "tối" and 1 <= h <= 5:
             h += 12
         if 6 <= h <= 21:
-            slots["appointment_hour"] = str(h)
+            # appointment_hour keeps its existing plain-string format for
+            # on-the-hour mentions ("8"); a half-hour mention is stored as
+            # "H:30" — the same "H:MM" shape the mock slot-picker already
+            # produces (see runtime/executor._MOCK_AVAILABLE_HOURS), so every
+            # downstream consumer of this slot already has to cope with it.
+            slots["appointment_hour"] = f"{h}:30" if is_half else str(h)
 
-    # Infer time_of_day from hour if not already set
+    # Infer time_of_day from hour if not already set. appointment_hour may be
+    # "H" or "H:30" (half-hour, see above) — split off the hour part only.
     if "time_of_day" not in slots and "appointment_hour" in slots:
-        h = int(slots["appointment_hour"])
+        h = int(slots["appointment_hour"].split(":")[0])
         slots["time_of_day"] = "sáng" if h < 12 else ("chiều" if h < 18 else "tối")
 
     if "time_of_day" in slots:
         tod = slots["time_of_day"]
         hour = slots.get("appointment_hour")
-        slots["time_slot"] = f"buổi {tod} lúc {hour} giờ" if hour else f"buổi {tod}"
+        slots["time_slot"] = f"buổi {tod} lúc {format_hour_vn(hour)}" if hour else f"buổi {tod}"
 
     # ── Patient name ─────────────────────────────────────────────────────────
     for pattern, ignore_case in (

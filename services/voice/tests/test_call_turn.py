@@ -14,7 +14,7 @@ import pytest
 from call.egress import EgressSender
 from call.events import CallContext
 from call.media import MediaRouter
-from call.turn import TurnOrchestrator, _resolves_to_graceful_close
+from call.turn import _QUESTION_RE, TurnOrchestrator, _resolves_to_graceful_close
 from runtime.executor import TurnResult
 from runtime.session import SessionState
 
@@ -348,3 +348,39 @@ def test_resolves_to_graceful_close_handles_cycle_without_infinite_recursion():
     steps = {"loop": {"id": "loop", "type": "speak_listen", "fallback_goto": "loop"}}
     step = steps["loop"]
     assert _resolves_to_graceful_close(step, steps) is False
+
+
+# ── _QUESTION_RE — regression cases from the 100-call LLM-caller audit ─────
+#
+# Mỗi câu dưới đây từng bị AI bỏ qua trong bộ 100 cuộc gọi giả lập
+# (llm_conversation_results_100.json) vì _QUESTION_RE không nhận diện được
+# là câu hỏi, nên _fsm_rag_intercept không bao giờ thử RAG search. Đã xác
+# nhận bằng /rag/test-search thật trên GCP rằng cả hai đều có điểm vượt
+# ngưỡng trả lời trực tiếp rag_confidence_default=0.65 (0.6783 và 0.6960 —
+# xem báo cáo điều tra), nghĩa là nếu regex bắt được, AI đã trả lời đúng.
+
+
+def test_question_re_matches_question_mark_mid_utterance_not_only_at_end():
+    """Neo `\\?$` cũ chỉ khớp khi "?" là ký tự cuối chuỗi — bỏ sót câu hỏi
+    thật khi caller nói tiếp sau dấu hỏi trong cùng một lượt (rất phổ biến
+    với STT/LLM caller ghép nhiều câu liền nhau)."""
+    utterance = (
+        "Mới rồi em có nghe nói bệnh viện này có dịch vụ khám tổng quát "
+        "phải không? Em muốn hỏi xem cái dịch vụ ấy..."
+    )
+    assert _QUESTION_RE.search(utterance) is not None
+
+
+def test_question_re_matches_muon_hoi_intent_phrase_without_question_mark():
+    """"muốn hỏi" là tín hiệu ý định hỏi rõ ràng trong tiếng Việt dù câu
+    không kết bằng dấu "?" — ví dụ khách nói ý định hỏi trước khi đặt câu
+    hỏi cụ thể."""
+    utterance = "Tôi muốn hỏi trước về nội soi dạ dày trước đã. Chứ chưa đặt lịch ạ."
+    assert _QUESTION_RE.search(utterance) is not None
+
+
+def test_question_re_still_ignores_plain_booking_statement():
+    """Câu trần thuật đặt lịch thông thường, không có dấu hiệu câu hỏi nào,
+    không được kích hoạt RAG search — tránh regression ngược, quét quá rộng."""
+    utterance = "Dạ, em muốn đặt lịch khám da liễu cho em bé nhà em ạ."
+    assert _QUESTION_RE.search(utterance) is None

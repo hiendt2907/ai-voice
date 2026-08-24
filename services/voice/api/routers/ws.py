@@ -49,21 +49,25 @@ _settings = Settings()
 
 
 async def _fetch_active_script(campaign_id: str) -> dict | None:  # type: ignore[type-arg]
-    """Fetch the published script body for a campaign from the Script CMS.
+    """Fetch the published script version for a campaign from the Script CMS.
 
     This is what actually wires the Portal's draft/review/publish/lint/audit
     flow into real calls — without it, publish state is decorative: callers
     would fall back to whatever local JSON file the SIP bridge happens to
     have on disk, bypassing HITL review entirely. Same internal-endpoint
     pattern as nlu/store.py's reload_from_api (no auth, service-to-service).
+
+    Trả nguyên response (không chỉ `.body`) — nó còn mang `interceptionMode`/
+    `interceptionDomains` của campaign, xem điểm gọi trong `call_ws` để biết
+    lý do (tính năng Shadow/Medium/Full trên Portal trước đây chưa từng được
+    voice worker đọc).
     """
     url = f"{_settings.api_url}/internal/scripts/{campaign_id}/active"
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(url, headers=internal_headers())
             resp.raise_for_status()
-            version = resp.json()
-            return version.get("body")
+            return resp.json()
     except Exception as exc:
         logger.warning("Failed to fetch published script for campaign=%s: %s", campaign_id, exc)
         return None
@@ -298,10 +302,20 @@ async def call_ws(
                 ctx.caller_number = start.caller_number
                 ctx.caller_direction = start.direction
                 ctx.script = raw.get("script", {})
+                # Shadow/Medium/Full của campaign (Portal → InterceptionModeSelector)
+                # trước đây chưa từng được đọc ở đây — ctx.interception_mode luôn
+                # rơi về "full" mặc định vì không caller nào (SIP bridge, simulator,
+                # CloudFone relay) từng gửi interception_mode trong message start.
+                # Đọc từ campaign làm giá trị mặc định; nếu message start có gửi
+                # tường minh thì vẫn ưu tiên giá trị đó (giữ khả năng override).
+                campaign_interception_mode: str | None = None
+                campaign_interception_domains: list[str] = []
                 if not ctx.script and ctx.campaign_id:
                     fetched = await _fetch_active_script(ctx.campaign_id)
                     if fetched:
-                        ctx.script = fetched
+                        ctx.script = fetched.get("body", {})
+                        campaign_interception_mode = fetched.get("interceptionMode")
+                        campaign_interception_domains = fetched.get("interceptionDomains") or []
                 if not ctx.script and script_id:
                     try:
                         ctx.script = _load_script_file(script_id)
@@ -318,8 +332,12 @@ async def call_ws(
                     # KB search both treat as "no campaign filter, see everything".
                     ctx.script["campaignId"] = ctx.campaign_id
                 ctx.steps = _index_steps(ctx.script)
-                ctx.interception_mode = raw.get("interception_mode", "full")
-                ctx.interception_domains = raw.get("interception_domains", [])
+                ctx.interception_mode = raw.get(
+                    "interception_mode", campaign_interception_mode or "full"
+                )
+                ctx.interception_domains = raw.get(
+                    "interception_domains", campaign_interception_domains
+                )
                 ctx.started_at = started_at = time.time()
 
                 # Root span for the whole call. Parented to the traceparent

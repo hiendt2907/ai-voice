@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
+from nlu.slot_extractor import format_hour_vn
 from runtime.fsm import resolve_next_step
 from runtime.intent_matcher import MatchResult, match_intent
 from runtime.session import SessionState, TranscriptEntry
@@ -63,7 +64,7 @@ def _recompute_derived_slots(slots: dict[str, str]) -> dict[str, str]:
     hour = slots.get("appointment_hour")
     if tod:
         if hour:
-            derived["time_slot"] = f"buổi {tod} lúc {hour} giờ"
+            derived["time_slot"] = f"buổi {tod} lúc {format_hour_vn(hour)}"
         else:
             derived["time_slot"] = f"buổi {tod}"
     noisoi_type = slots.get("noisoi_type")
@@ -143,6 +144,15 @@ def _weekday_vn(weekday: int) -> str:
 # plausible clinic-hours slot so the flow doesn't stall asking the caller to
 # guess a free hour themselves; replace `_mock_pick_available_slot` with an
 # actual API call once that integration lands.
+#
+# CẢNH BÁO — KHÔNG PHẢI GIỜ LÀM VIỆC THẬT: danh sách này chỉ có khung sáng
+# (8:00-10:00) và chiều (14:00-16:00), KHÔNG có khung tối, và không kiểm tra
+# thứ trong tuần hay ngày lễ (kể cả Chủ nhật). Đây là dữ liệu placeholder
+# thuần kỹ thuật để flow không bị đứng khi khách chưa nói giờ cụ thể — TUYỆT
+# ĐỐI không coi là nguồn giờ làm việc đáng tin. Người vận hành phòng khám
+# phải xác nhận giờ làm việc thật (có khám buổi tối không, Chủ nhật có mở
+# cửa không, v.v.) trước khi thay đổi danh sách này; việc đó nằm ngoài phạm
+# vi của đợt sửa lỗi trích xuất slot này.
 _MOCK_AVAILABLE_HOURS = ["8:00", "8:30", "9:00", "9:30", "10:00", "14:00", "14:30", "15:00", "15:30", "16:00"]
 
 
@@ -180,7 +190,18 @@ def _clear_stale_time_on_rejection(
 
 def _fill_time_slot_if_landing_unset(state: SessionState, next_step_id: str | None) -> SessionState:
     """Caller gave a date but never specified a time — mock-assign an
-    available slot instead of making them guess an exact hour."""
+    available slot instead of making them guess an exact hour.
+
+    The `state.slots.get("time_slot")` guard is what keeps this from ever
+    clobbering a time the caller actually stated: `time_slot` is derived by
+    `_recompute_derived_slots` from `time_of_day`/`appointment_hour` and
+    merged into `state` BEFORE this function runs (see `_process_with_match`
+    / `process_turn`), so it is already truthy the moment either of those two
+    slots was extracted from the utterance — this turn's or an earlier one's.
+    Verified against the real persona-97 transcript (khách nói rõ "buổi tối"
+    + "7 rưỡi" hai lần): after fixing the time_of_day/"tối đa" and
+    hour/"rưỡi" extraction bugs, this mock path never fires for that call —
+    confirmed via tests/test_slot_recovery.py's mock-does-not-override cases."""
     if next_step_id != "confirm_time_available" or state.slots.get("time_slot"):
         return state
     state = state.with_slots(_mock_pick_available_slot())

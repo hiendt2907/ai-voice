@@ -21,9 +21,17 @@ pytestmark = pytest.mark.asyncio
 
 
 class TestFetchActiveScript:
-    async def test_returns_body_on_success(self):
+    async def test_returns_full_version_on_success(self):
+        """Trả nguyên response (không chỉ .body) — interceptionMode/Domains của
+        campaign đi kèm trong đó, xem call_ws để biết lý do (Shadow/Medium/Full
+        trên Portal trước đây không bao giờ tới được voice worker)."""
         mock_response = MagicMock()
-        mock_response.json.return_value = {"id": "v1", "body": {"entry_step": "greeting", "steps": []}}
+        mock_response.json.return_value = {
+            "id": "v1",
+            "body": {"entry_step": "greeting", "steps": []},
+            "interceptionMode": "medium",
+            "interceptionDomains": ["pricing"],
+        }
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
@@ -34,7 +42,9 @@ class TestFetchActiveScript:
         with patch("httpx.AsyncClient", return_value=mock_client):
             result = await _fetch_active_script("campaign-1")
 
-        assert result == {"entry_step": "greeting", "steps": []}
+        assert result["body"] == {"entry_step": "greeting", "steps": []}
+        assert result["interceptionMode"] == "medium"
+        assert result["interceptionDomains"] == ["pricing"]
         mock_client.get.assert_awaited_once()
         assert "campaign-1/active" in mock_client.get.call_args.args[0]
 

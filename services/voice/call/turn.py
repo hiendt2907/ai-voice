@@ -92,11 +92,21 @@ def _resolves_to_graceful_close(step: dict, steps: dict[str, dict], _visited: se
 
 
 _QUESTION_RE = re.compile(
-    r"\?$"
+    # Dấu "?" bất kỳ vị trí nào trong lượt nói, KHÔNG neo cuối chuỗi — STT/LLM
+    # caller thường ghép câu hỏi với vế thoại khác trong cùng một lượt (ví dụ
+    # "...phải không? Em muốn hỏi xem cái dịch vụ ấy..."), nên câu hỏi thật
+    # thường KHÔNG nằm ở cuối. Neo `\?$` cũ bỏ sót phần lớn các câu hỏi dạng
+    # này — xác nhận bằng RAG test-search thật: một câu bị bỏ sót có điểm
+    # 0.7676, vượt xa ngưỡng trả lời trực tiếp 0.65 (rag_confidence_default).
+    r"\?"
     r"|\b(bao nhiêu|mấy tiếng|như thế nào|ra sao|thế nào|là gì|ở đâu|khi nào|làm gì|cần gì)\b"
     r"|\bcó\b.{0,25}\bkhông\b"
     r"|\bcòn\b.{0,20}\b(trống|lịch|chỗ|không|được)\b"
     r"|\b(giờ nào|khung giờ|mấy giờ).{0,20}\b(còn|trống|được|có)\b"
+    # "muốn hỏi" là tín hiệu ý định hỏi rõ ràng dù không có "?" — ví dụ
+    # "Tôi muốn hỏi trước về nội soi dạ dày trước đã" (điểm RAG thật: 0.6960,
+    # cũng vượt ngưỡng 0.65 nhưng trước đây không được thử vì regex bỏ sót).
+    r"|\bmuốn hỏi\b"
     r"|\b(giá|chi phí|phí|chuẩn bị|nhịn ăn|đau không|an toàn|nguy hiểm|kết quả|bảo hiểm"
     r"|mất bao|sau nội soi|sau khi|thuốc|tác dụng|giờ làm việc|lịch làm việc|mở cửa)\b",
     re.IGNORECASE | re.DOTALL,
