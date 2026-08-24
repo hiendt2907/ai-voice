@@ -113,6 +113,65 @@ class TestExtractSlots:
             assert expected in slots["appointment_date"], f"{word} tuần sau should land on next week's {word}"
             assert expected_dt.weekday() == target_wd
 
+    def test_date_weekday_digit_form_next_week(self):
+        """Người Việt nói thứ bằng SỐ rất phổ biến ("thứ 3", "thứ 6") không
+        kém gì dạng chữ. Trước đây _WEEKDAY_PATTERNS chỉ khớp dạng chữ cho
+        thứ 2-6 (chỉ riêng thứ Bảy có alias số) nên "thứ 3 tuần sau" không
+        khớp pattern nào, rơi xuống nhánh fallback "_has_next_week" luôn
+        chốt hôm nay+7 ngày bất kể khách nói thứ mấy. Tái hiện từ 2 transcript
+        thật (persona 74, 91 của batch test 100 cuộc): 'sáng thứ 3 tuần sau'
+        và 'sáng thứ 6 tuần sau' từng cho CÙNG một kết quả sai "thứ Hai"."""
+        from datetime import datetime, timedelta  # noqa: PLC0415
+        now = datetime.now()
+        this_monday = now - timedelta(days=now.weekday())
+        next_monday = this_monday + timedelta(days=7)
+        for digit, target_wd in [("2", 0), ("3", 1), ("4", 2), ("5", 3), ("6", 4)]:
+            slots = extract_slots(f"em muốn đặt thứ {digit} tuần sau")
+            expected_dt = next_monday + timedelta(days=target_wd)
+            expected = expected_dt.strftime("%d/%m/%Y")
+            assert expected in slots["appointment_date"], (
+                f"thứ {digit} tuần sau should land on next week's thứ {digit}"
+            )
+            assert expected_dt.weekday() == target_wd
+
+    def test_date_weekday_digit_form_without_next_week(self):
+        """Dạng số không kèm "tuần sau" phải resolve ra thứ đó GẦN NHẤT sắp
+        tới (giống hệt cách dạng chữ đã hoạt động), không phải hôm nay+7."""
+        from datetime import datetime, timedelta  # noqa: PLC0415
+        now = datetime.now()
+        for digit, target_wd in [("2", 0), ("3", 1), ("4", 2), ("5", 3), ("6", 4)]:
+            slots = extract_slots(f"em muốn đặt thứ {digit}")
+            days_ahead = (target_wd - now.weekday()) % 7 or 7
+            expected = (now + timedelta(days=days_ahead)).strftime("%d/%m/%Y")
+            assert expected in slots["appointment_date"], (
+                f"thứ {digit} should land on the nearest upcoming thứ {digit}"
+            )
+
+    def test_date_digit_weekday_not_confused_with_calendar_date(self):
+        """Nhập nhằng cần tránh: "3 tháng 9" (ngày 3 tháng 9) không có chữ
+        "thứ" đứng ngay trước số 3, nên KHÔNG được hiểu nhầm thành "thứ 3".
+        Pattern \\bthứ\\s*3\\b neo chữ "thứ" ngay trước số nên câu này phải
+        rơi xuống nhánh parse ngày/tháng bên dưới, ra đúng 03/09."""
+        slots = extract_slots("cho tôi đặt lịch ngày 3 tháng 9")
+        assert "appointment_date" in slots
+        assert "03/09" in slots["appointment_date"]
+
+    def test_date_weekday_digit_persona_91_thu_sau_tuan_sau(self):
+        """Tái hiện đúng transcript thật (persona 91, batch test 100 cuộc):
+        khách nói thứ Sáu tuần sau bằng dạng số, phải ra đúng thứ Sáu của
+        tuần sau — không phải thứ Hai (kết quả sai trước khi sửa)."""
+        from datetime import datetime, timedelta  # noqa: PLC0415
+        now = datetime.now()
+        this_monday = now - timedelta(days=now.weekday())
+        next_monday = this_monday + timedelta(days=7)
+        expected_friday = (next_monday + timedelta(days=4)).strftime("%d/%m/%Y")
+        wrong_monday = (next_monday + timedelta(days=0)).strftime("%d/%m/%Y")
+
+        slots = extract_slots("tui đặt vào sáng thứ 6 tuần sau, 9 giờ đúng không?")
+        assert expected_friday in slots["appointment_date"]
+        assert wrong_monday not in slots["appointment_date"]
+        assert slots["appointment_hour"] == "9"
+
     def test_hour_prefers_last_anchored_over_incidental_earlier_number(self):
         """A dynamic LLM-caller test caught the old single re.search grabbing
         the leftmost hour-like number in the utterance even when it was an

@@ -239,10 +239,25 @@ def extract_slots(utterance: str) -> dict[str, str]:
     elif (m := re.search(r"\b(\d{1,2})\s+(?:hôm|ngày|bữa)\s+nữa\b", utt)):
         appointment_date = _format_date_vn(now + timedelta(days=int(m.group(1))))
     else:
+        # Thứ trong tiếng Việt nói được cả dạng CHỮ ("thứ ba") lẫn dạng SỐ
+        # ("thứ 3") — trước đây chỉ "thứ bảy" có thêm alias số (\bthứ\s*7\b),
+        # còn thứ 2-6 CHỈ khớp dạng chữ nên khách nói "thứ 3 tuần sau" rơi
+        # thẳng xuống nhánh fallback "_has_next_week" phía dưới (luôn chốt
+        # hôm nay+7 ngày, bỏ qua thứ khách yêu cầu). Tái hiện trực tiếp:
+        # 'sáng thứ 3 tuần sau, lúc 8 giờ 30' và 'sáng thứ 6 tuần sau, 9 giờ'
+        # (persona 74, 91 trong batch test 100 cuộc) từng cho CÙNG một kết
+        # quả sai "thứ Hai" dù khách nói hai thứ khác nhau.
+        # Neo "thứ" ngay trước số (\bthứ\s*N\b, giống cách "thứ 7" đã làm
+        # đúng) để không khớp nhầm số đứng một mình trong ngữ cảnh khác, ví
+        # dụ "3 tháng 9" (ngày) không có chữ "thứ" đứng trước nên không khớp.
         _WEEKDAY_PATTERNS = [
-            (r"\bthứ\s*hai\b", 0), (r"\bthứ\s*ba\b", 1), (r"\bthứ\s*tư\b", 2),
-            (r"\bthứ\s*năm\b", 3), (r"\bthứ\s*sáu\b", 4),
-            (r"\bthứ\s*bảy\b|\bthứ\s*7\b", 5), (r"\bchủ\s*nhật\b", 6),
+            (r"\bthứ\s*hai\b|\bthứ\s*2\b", 0),
+            (r"\bthứ\s*ba\b|\bthứ\s*3\b", 1),
+            (r"\bthứ\s*tư\b|\bthứ\s*4\b", 2),
+            (r"\bthứ\s*năm\b|\bthứ\s*5\b", 3),
+            (r"\bthứ\s*sáu\b|\bthứ\s*6\b", 4),
+            (r"\bthứ\s*bảy\b|\bthứ\s*7\b", 5),
+            (r"\bchủ\s*nhật\b", 6),
         ]
         _has_next_week = bool(re.search(r"\btuần sau\b|\btuần tới\b|\btuần kế\b", utt))
         for pattern, target_wd in _WEEKDAY_PATTERNS:

@@ -21,6 +21,7 @@ from collections.abc import Callable
 from typing import Any
 
 from fastapi import WebSocket
+from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from call.events import AudioChunkPayload, BeatPayload
 from telephony import TelephonyAdapter
@@ -30,6 +31,12 @@ from tts.text_normalizer import normalize as tts_normalize
 logger = logging.getLogger(__name__)
 
 _TEMPLATE_VAR = re.compile(r"\{\{(\w+)\}\}")
+
+# Thông điệp lỗi chính xác mà Starlette ném ra khi gọi send() sau khi một
+# close message đã được gửi (xem starlette/websockets.py WebSocket.send()).
+# Dùng so khớp CHÍNH XÁC chuỗi này — không bắt RuntimeError chung chung —
+# để không nuốt nhầm một RuntimeError khác có nguyên nhân thật sự cần biết.
+_WS_ALREADY_CLOSED_MSG = 'Cannot call "send" once a close message has been sent.'
 
 # PCM handed to send_audio is always int16 @ 8kHz (see simulator/
 # call_simulator.py's _PLAYBACK_SR) — used to convert bytes sent into an
@@ -67,7 +74,7 @@ class EgressSender:
         we'd previously queued for it."""
         self._playback_deadline = time.monotonic()
 
-    async def send(self, payload: dict[str, Any]) -> None:
+    async def send(self, payload: dict[str, Any]) -> bool:
         """Encode an internal (CloudFone-shaped) event and send it.
 
         A provider may translate one internal event into several wire
@@ -77,22 +84,78 @@ class EgressSender:
         whose transport expects binary WS frames for audio (e.g. FreeSWITCH's
         mod_audio_fork in bidirectional *streaming* mode) instead of
         JSON-wrapped base64.
+
+        Returns True if the payload was actually put on the wire, False if
+        it was silently dropped because the WebSocket is already closed
+        (khách đã cúp máy). Đây là ca bình thường cuối cuộc gọi — không phải
+        lỗi hệ thống — nên không ném exception lên caller (FSM/RAG/handoff
+        đều gọi send() mà không bọc try/except quanh mỗi lần gọi).
+
+        Kiểm tra `application_state` TRƯỚC khi gửi là cách Starlette hỗ trợ
+        chính thức để biết kết nối còn sống hay không (public attribute,
+        không phải suy đoán từ nội dung exception). Vẫn còn một khe hở đua
+        (race) rất hẹp giữa lúc kiểm tra và lúc `_send` ASGI thật sự chạy —
+        ví dụ task đọc inbound đóng kết nối đúng lúc task này đang giữa
+        vòng lặp gửi nhiều message cho cùng một payload — nên phần catch
+        bên dưới là lưới đỡ cho đúng khe hở đó, so khớp CHÍNH XÁC thông
+        điệp lỗi của Starlette thay vì bắt RuntimeError chung chung.
         """
+        ws_state = getattr(self.ws, "application_state", WebSocketState.CONNECTED)
+        if ws_state != WebSocketState.CONNECTED:
+            logger.debug(
+                "EgressSender.send: bỏ qua gửi vì WebSocket đã đóng "
+                "(application_state=%s, event=%s)",
+                ws_state, payload.get("event"),
+            )
+            return False
+
         for msg in self.adapter.encode_outbound(payload):
-            if isinstance(msg, bytes):
-                await self.ws.send_bytes(msg)
-            else:
-                await self.ws.send_json(msg)
+            try:
+                if isinstance(msg, bytes):
+                    await self.ws.send_bytes(msg)
+                else:
+                    await self.ws.send_json(msg)
+            except RuntimeError as exc:
+                if str(exc) != _WS_ALREADY_CLOSED_MSG:
+                    raise
+                # Khách cúp máy đúng giữa lúc ta đang gửi (khe hở đua giữa
+                # kiểm tra state ở trên và lệnh gửi thật) — bỏ qua phần còn
+                # lại của payload này, không coi là lỗi hệ thống.
+                logger.debug(
+                    "EgressSender.send: WebSocket đóng ngay giữa lúc gửi "
+                    "(event=%s) — bỏ qua phần còn lại",
+                    payload.get("event"),
+                )
+                return False
+            except WebSocketDisconnect:
+                # Cùng khe hở đua như trên nhưng lộ ra ở tầng ASGI thấp hơn:
+                # uvicorn phát hiện ClientDisconnected ngay trong send() rồi
+                # Starlette bọc lại thành WebSocketDisconnect thay vì
+                # RuntimeError — bắt được bằng thực nghiệm thật (simulator
+                # cúp máy giữa lúc _fsm_rag_intercept đang nói), không phải
+                # suy đoán. Không so khớp message vì đây đã là kiểu ngoại lệ
+                # cụ thể, tự thân nó đã nghĩa là "socket đóng rồi".
+                logger.debug(
+                    "EgressSender.send: WebSocketDisconnect giữa lúc gửi "
+                    "(event=%s) — bỏ qua phần còn lại",
+                    payload.get("event"),
+                )
+                return False
+        return True
 
-    async def send_beat(self, beat: BeatPayload) -> None:
-        await self.send(beat.to_dict())
+    async def send_beat(self, beat: BeatPayload) -> bool:
+        return await self.send(beat.to_dict())
 
-    async def send_audio(self, pcm_bytes: bytes, turn: int) -> None:
+    async def send_audio(self, pcm_bytes: bytes, turn: int) -> bool:
         chunk = AudioChunkPayload(data=base64.b64encode(pcm_bytes).decode(), turn=turn)
-        await self.send(chunk.to_dict())
-        duration_s = len(pcm_bytes) / (_PLAYBACK_SAMPLE_RATE * _PLAYBACK_BYTES_PER_SAMPLE)
-        now = time.monotonic()
-        self._playback_deadline = max(now, self._playback_deadline) + duration_s
+        sent = await self.send(chunk.to_dict())
+        if sent:
+            # Không cộng dồn playback-deadline cho audio chưa thực sự lên
+            # dây — khách đã cúp máy thì không còn ai để "còn đang nghe".
+            duration_s = len(pcm_bytes) / (_PLAYBACK_SAMPLE_RATE * _PLAYBACK_BYTES_PER_SAMPLE)
+            now = time.monotonic()
+            self._playback_deadline = max(now, self._playback_deadline) + duration_s
+        return sent
 
     async def say(
         self,
@@ -110,7 +173,11 @@ class EgressSender:
             text=text, pause_ms=500, turn=turn, step_id=step_id,
             ttfa_ms=round((time.perf_counter() - t_start) * 1000, 1),
         )
-        await self.send_beat(beat)
+        beat_sent = await self.send_beat(beat)
+        if not beat_sent:
+            # WebSocket đã đóng (khách cúp máy) — không còn ai nghe, khỏi
+            # tốn công tổng hợp giọng nói cho một kết nối đã chết.
+            return
         active_tts = tts_chain or tts
         if active_tts is None:
             return
@@ -139,7 +206,7 @@ class EgressSender:
             return
         active_tts = tts_chain or tts
         if filler_pcm is not None:
-            await self.send_audio(filler_pcm, turn)
+            await self.send_audio(filler_pcm, turn)  # gửi được hay không không ảnh hưởng gì thêm ở đây
         elif active_tts and filler_text:
             try:
                 pcm = await active_tts.synthesize(filler_text)  # type: ignore[union-attr]
@@ -178,15 +245,25 @@ class EgressSender:
                 beats: list[dict] = variant.get("beats", [])
 
                 _slots = slots or {}
+                ws_closed = False
                 for beat_dict in beats:
                     raw_text = beat_dict.get("text", "")
                     text = _TEMPLATE_VAR.sub(lambda m: _slots.get(m.group(1), m.group(0)), raw_text)
-                    if text.strip():
-                        await self.send_beat(BeatPayload(
-                            text=text, pause_ms=beat_dict.get("pause_ms", 0),
-                            turn=turn, step_id=current_step_id,
-                        ))
+                    if not text.strip():
+                        continue
+                    beat_sent = await self.send_beat(BeatPayload(
+                        text=text, pause_ms=beat_dict.get("pause_ms", 0),
+                        turn=turn, step_id=current_step_id,
+                    ))
+                    if not beat_sent:
+                        # Khách cúp máy giữa lượt — các beat còn lại của
+                        # CÙNG turn này sẽ gặp đúng tình trạng đã đóng,
+                        # dừng sớm thay vì lặp lại việc gửi vô ích.
+                        ws_closed = True
+                        break
 
+                if ws_closed:
+                    return
                 if hasattr(tts, "stream_step"):
                     gen = await tts.stream_step(beats, slots, tts_interrupt)  # type: ignore[union-attr]
                 else:
@@ -194,6 +271,7 @@ class EgressSender:
                 first = True
                 chunks = 0
                 audio_bytes = 0
+                ws_closed_mid_audio = False
                 try:
                     async for chunk in gen:
                         if first:
@@ -202,7 +280,16 @@ class EgressSender:
                             first = False
                         chunks += 1
                         audio_bytes += len(chunk)
-                        await self.send_audio(chunk, turn)
+                        if not await self.send_audio(chunk, turn):
+                            # Khách cúp máy giữa lúc đang phát audio — không
+                            # còn ai để nghe phần còn lại. Dừng kéo thêm
+                            # chunk từ TTS (đóng generator để giải phóng tài
+                            # nguyên tổng hợp giọng nói đang chạy dở) thay vì
+                            # tiếp tục gửi vô ích và lặp lại đúng tình trạng
+                            # đã đóng cho mỗi chunk còn lại.
+                            ws_closed_mid_audio = True
+                            await gen.aclose()
+                            break
                 finally:
                     # Logged unconditionally (including on interrupt/error):
                     # "TTFA printed, then silence" is ambiguous without it —
@@ -213,7 +300,8 @@ class EgressSender:
                         turn, chunks,
                         audio_bytes / (_PLAYBACK_SAMPLE_RATE * _PLAYBACK_BYTES_PER_SAMPLE),
                         (time.perf_counter() - t_start) * 1000,
-                        " (interrupted)" if tts_interrupt.is_set() else "",
+                        " (interrupted)" if tts_interrupt.is_set()
+                        else " (ws đã đóng)" if ws_closed_mid_audio else "",
                     )
             else:
                 from tts.streamer import stream_step_beats  # noqa: PLC0415
@@ -221,7 +309,10 @@ class EgressSender:
                 async for beat in stream_step_beats(step, slots, no_match, turn, t_start):
                     if tts_interrupt.is_set():
                         break
-                    await self.send_beat(beat)
+                    if not await self.send_beat(beat):
+                        # Cùng lý do như nhánh tts ở trên: khách đã cúp máy,
+                        # dừng sớm thay vì lặp lại lỗi cho từng beat còn lại.
+                        break
         finally:
             on_tts_end()
 
